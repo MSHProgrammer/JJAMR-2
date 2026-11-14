@@ -10,6 +10,9 @@ import {
   Sparkles,
   Trophy,
   RotateCcw,
+  Globe,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { Question, Section, Topic } from '../../types/jamr';
 import { SoundFX } from '../../utils/soundFx';
@@ -18,6 +21,7 @@ interface JamrainEngineProps {
   sections: Section[];
   topics: Topic[];
   questions: Question[];
+  onQuestionsAdded?: (added: Question[]) => void;
   onExit: () => void;
 }
 
@@ -62,6 +66,7 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
   sections,
   topics,
   questions,
+  onQuestionsAdded,
   onExit,
 }) => {
   const [phase, setPhase] = useState<'pick_topics' | 'board' | 'victory'>('pick_topics');
@@ -88,6 +93,10 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
 
   // Board state
   const [usedTiles, setUsedTiles] = useState<Record<string, 1 | 2 | 'none'>>({});
+  const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([]);
+  const [localAddedQuestions, setLocalAddedQuestions] = useState<Question[]>([]);
+  const [webSearching, setWebSearching] = useState(false);
+  const [webNotice, setWebNotice] = useState<string | null>(null);
   const [activeTile, setActiveTile] = useState<{
     tileKey: string;
     topic: Topic;
@@ -99,6 +108,18 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
   const [showHint, setShowHint] = useState(false);
   const [pitActive, setPitActive] = useState(false);
   const [twoAnswersActive, setTwoAnswersActive] = useState(false);
+
+  const allQuestions = useMemo(() => {
+    const seen = new Set<string>();
+    const combined: Question[] = [];
+    for (const q of [...localAddedQuestions, ...questions]) {
+      if (q && q.id && !seen.has(q.id)) {
+        seen.add(q.id);
+        combined.push(q);
+      }
+    }
+    return combined;
+  }, [localAddedQuestions, questions]);
 
   const selectedIds = useMemo(() => {
     const ids = new Set<string>();
@@ -174,24 +195,83 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
     setStagedTopic(null);
   };
 
+  const fetchLiveWebQuestions = async (topicIds: string[], swapIntoActive?: { tileKey: string; topic: Topic; points: 200 | 400 | 600 }) => {
+    if (topicIds.length === 0 || webSearching) return;
+    setWebSearching(true);
+    setWebNotice('جاري البحث في المواقع الموثوقة عن أسئلة جديدة...');
+    try {
+      const res = await fetch('/api/jamrain/search-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topicIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setWebNotice(data?.error || 'تعذر جلب أسئلة جديدة من الويب حالياً.');
+        return;
+      }
+      const added: Question[] = Array.isArray(data.questions) ? data.questions : [];
+      if (added.length > 0) {
+        setLocalAddedQuestions((prev) => [...added, ...prev]);
+        onQuestionsAdded?.(added);
+        setWebNotice(`تم جلب ${added.length} سؤالاً حقيقياً موثقاً من الويب!`);
+        if (swapIntoActive) {
+          const matched =
+            added.find((q) => q.topicId === swapIntoActive.topic.id && q.points === swapIntoActive.points) ||
+            added.find((q) => q.topicId === swapIntoActive.topic.id);
+          if (matched) {
+            setUsedQuestionIds((prev) => [...prev, matched.id]);
+            setActiveTile({ ...swapIntoActive, question: matched });
+            setModalStep('question');
+            setTimer(60);
+            setShowHint(false);
+          }
+        }
+      } else {
+        setWebNotice('لم يتم العثور على أسئلة إضافية جديدة غير الموجودة حالياً.');
+      }
+    } catch {
+      setWebNotice('حدث خطأ في الاتصال أثناء البحث في الويب.');
+    } finally {
+      setWebSearching(false);
+    }
+  };
+
   const openTileQuestion = (topic: Topic, points: 200 | 400 | 600, side: 'R' | 'L') => {
     const tileKey = `${topic.id}_${points}_${side}`;
     if (usedTiles[tileKey]) return;
 
     SoundFX.playTileSelect();
-    const pool = questions.filter((q) => q.topicId === topic.id && q.points === points);
-    const fallbackPool = questions.filter((q) => q.topicId === topic.id);
-    const finalPool = pool.length > 0 ? pool : fallbackPool;
-    const indexPick = side === 'R' ? 0 : Math.min(1, Math.max(0, finalPool.length - 1));
-    const q = finalPool[Math.floor(Math.random() * Math.max(1, finalPool.length - indexPick))] || {
-      id: `gen_${tileKey}`,
+    const usedSet = new Set(usedQuestionIds);
+    const tierUnused = allQuestions.filter(
+      (q) => q.topicId === topic.id && Number(q.points) === points && !usedSet.has(q.id)
+    );
+    const topicUnused = allQuestions.filter((q) => q.topicId === topic.id && !usedSet.has(q.id));
+    const tierAll = allQuestions.filter((q) => q.topicId === topic.id && Number(q.points) === points);
+    const topicAll = allQuestions.filter((q) => q.topicId === topic.id);
+
+    const finalPool =
+      tierUnused.length > 0
+        ? tierUnused
+        : topicUnused.length > 0
+          ? topicUnused
+          : tierAll.length > 0
+            ? tierAll
+            : topicAll;
+
+    const picked = finalPool[Math.floor(Math.random() * Math.max(1, finalPool.length))] || {
+      id: `fallback_${tileKey}`,
       topicId: topic.id,
       points,
-      question: `سؤال تحدي (${points} نقطة) في موضوع ${topic.name}: اذكر أبرز معلومة تاريخية أو حقيقة مشهورة في هذا المجال!`,
-      answer: `إجابة يقرّها الفريقان أو يراجعها المقدم حول ${topic.name}`,
+      question: `لا توجد أسئلة كافية مضافة في "${topic.name}" — اضغط زر البحث من الويب لجلب أسئلة حقيقية فوراً!`,
+      answer: `استخدم زر "🌐 سؤال جديد من الويب" أعلاه أو أضف أسئلة من لوحة الإدارة.`,
     };
 
-    setActiveTile({ tileKey, topic, points, question: q });
+    if (picked.id) {
+      setUsedQuestionIds((prev) => (prev.includes(picked.id) ? prev : [...prev, picked.id]));
+    }
+
+    setActiveTile({ tileKey, topic, points, question: picked });
     setModalStep('question');
     setTimer(60);
     setShowHint(false);
@@ -262,16 +342,31 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide">جَمْرَيْن</h1>
         </div>
 
-        <button
-          onClick={() => {
-            SoundFX.playClick();
-            setPhase('pick_topics');
-          }}
-          className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer"
-        >
-          <Settings className="w-4 h-4" />
-          <span>المواضيع الـ 100 ⚙️</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              SoundFX.playClick();
+              setPhase('pick_topics');
+            }}
+            className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">المواضيع الـ 100 ⚙️</span>
+            <span className="sm:hidden">المواضيع</span>
+          </button>
+
+          {phase === 'board' && sixTopics.length > 0 && (
+            <button
+              disabled={webSearching}
+              onClick={() => void fetchLiveWebQuestions(sixTopics.map((t) => t.id))}
+              className="px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="بحث في المواقع وجلب أسئلة جديدة للمواضيع الحالية"
+            >
+              {webSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+              <span className="hidden md:inline">أسئلة جديدة من الويب</span>
+            </button>
+          )}
+        </div>
 
         <button
           onClick={() => {
@@ -283,6 +378,15 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
           دور: {activeTurn === 1 ? team1Name : team2Name}
         </button>
       </div>
+
+      {webNotice && (
+        <div className="bg-emerald-950/90 border-b border-emerald-500/30 px-4 py-2 text-center text-xs font-bold text-emerald-200 flex items-center justify-center gap-3 shrink-0">
+          <span>{webNotice}</span>
+          <button onClick={() => setWebNotice(null)} className="text-emerald-400 hover:text-white cursor-pointer">
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* MAIN CONTENT */}
       <div className="flex-1 overflow-y-auto p-3 sm:p-5">
@@ -418,7 +522,7 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
             </div>
 
             {/* Floating Bottom Action Pill */}
-            <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3">
+            <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-2.5 px-3 w-full max-w-3xl">
               {stagedTopic && (
                 <button
                   onClick={() => confirmStagedTopic()}
@@ -429,15 +533,25 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
                 </button>
               )}
               {allSixPicked && (
-                <button
-                  onClick={() => {
-                    SoundFX.playTileSelect();
-                    setPhase('board');
-                  }}
-                  className="px-8 py-3.5 rounded-full bg-gradient-to-l from-amber-400 to-orange-500 text-slate-950 font-black text-base shadow-2xl cursor-pointer"
-                >
-                  ابدأ لوحة الـ 36 سؤال 🔥
-                </button>
+                <>
+                  <button
+                    disabled={webSearching}
+                    onClick={() => void fetchLiveWebQuestions(sixTopics.map((t) => t.id))}
+                    className="px-5 py-3.5 rounded-full bg-[#1d113a] hover:bg-[#2a1952] border-2 border-emerald-400/60 text-emerald-200 font-black text-xs sm:text-sm shadow-2xl inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {webSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                    <span>{webSearching ? 'جاري البحث في المواقع...' : '🌐 جلب أسئلة حية من الويب'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      SoundFX.playTileSelect();
+                      setPhase('board');
+                    }}
+                    className="px-8 py-3.5 rounded-full bg-gradient-to-l from-amber-400 to-orange-500 text-slate-950 font-black text-base shadow-2xl cursor-pointer"
+                  >
+                    ابدأ لوحة الـ 36 سؤال 🔥
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -533,6 +647,7 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
             <button
               onClick={() => {
                 setUsedTiles({});
+                setUsedQuestionIds([]);
                 setTeam1Score(0);
                 setTeam2Score(0);
                 setT1Lifelines({ friend: true, twoAnswers: true, pit: true });
@@ -586,13 +701,39 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
       {activeTile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
           <div className="w-full max-w-2xl rounded-3xl bg-[#1d113a] border-2 border-[#6d4ee3] p-6 sm:p-8 shadow-2xl space-y-6">
-            <div className="flex items-center justify-between">
-              <span className="px-3.5 py-1.5 rounded-xl bg-[#f06634] text-white font-black text-xs tabular-nums">
-                {activeTile.topic.icon} {activeTile.topic.name} · {activeTile.points} نقطة
-                {pitActive ? ' (الحفرة ×2 🕳️)' : ''}
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3.5 py-1.5 rounded-xl bg-[#f06634] text-white font-black text-xs tabular-nums">
+                  {activeTile.topic.icon} {activeTile.topic.name} · {activeTile.points} نقطة
+                  {activeTile.points === 200 ? ' (سهل)' : activeTile.points === 400 ? ' (متوسط)' : ' (تحدي)'}
+                  {pitActive ? ' (الحفرة ×2 🕳️)' : ''}
+                </span>
+                {activeTile.question.isWebResearched && (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-[11px] font-black inline-flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    <span>موثق من الويب</span>
+                  </span>
+                )}
+              </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                {modalStep === 'question' && (
+                  <button
+                    disabled={webSearching}
+                    onClick={() =>
+                      void fetchLiveWebQuestions([activeTile.topic.id], {
+                        tileKey: activeTile.tileKey,
+                        topic: activeTile.topic,
+                        points: activeTile.points,
+                      })
+                    }
+                    className="px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-emerald-200 text-[11px] font-black inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    title="البحث في الويب عن سؤال جديد وتبديله"
+                  >
+                    {webSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                    <span>سؤال ويب جديد</span>
+                  </button>
+                )}
                 <span className={`text-lg font-black tabular-nums ${timer <= 10 ? 'text-rose-400 animate-pulse' : 'text-amber-300'}`}>
                   ⏱️ {timer}ث
                 </span>
@@ -696,6 +837,19 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
                 </div>
                 {activeTile.question.explanation && (
                   <p className="text-sm text-slate-300 font-readex">{activeTile.question.explanation}</p>
+                )}
+                {activeTile.question.sourceUrl && (
+                  <div className="flex justify-center">
+                    <a
+                      href={activeTile.question.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-cyan-300"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>المصدر: {activeTile.question.sourceTitle || 'موقع موثق'}</span>
+                    </a>
+                  </div>
                 )}
                 <button
                   onClick={() => {

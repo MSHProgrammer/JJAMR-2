@@ -61,6 +61,27 @@ export interface Question {
   explanation?: string;
   image?: string;
   video?: string;
+  sourceTitle?: string;
+  sourceUrl?: string;
+  isWebResearched?: boolean;
+}
+
+export interface JamrainFactItem {
+  q: string;
+  a: string;
+  hint?: string;
+  explanation?: string;
+}
+
+export interface JamrainTopicSpec {
+  id: string;
+  name: string;
+  category: string;
+  sectionId: string;
+  icon: string;
+  tier200: JamrainFactItem[];
+  tier400: JamrainFactItem[];
+  tier600: JamrainFactItem[];
 }
 
 export interface BarrahCategory {

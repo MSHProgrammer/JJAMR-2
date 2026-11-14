@@ -139,8 +139,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <div className="text-xs text-slate-300 mt-1 font-bold">ألعاب جماعية</div>
             </div>
             <div className="rounded-2xl bg-black/35 border border-white/10 p-4 text-center">
-              <div className="text-2xl sm:text-3xl font-black text-orange-400 tabular-nums">6,000+</div>
-              <div className="text-xs text-slate-300 mt-1 font-bold">سؤال وموضوع</div>
+              <div className="text-2xl sm:text-3xl font-black text-orange-400 tabular-nums">1,200+</div>
+              <div className="text-xs text-slate-300 mt-1 font-bold">سؤال حقيقي موثّق</div>
             </div>
             <div className="rounded-2xl bg-black/35 border border-white/10 p-4 text-center">
               <div className="text-2xl sm:text-3xl font-black text-emerald-400 tabular-nums">100</div>

@@ -15,6 +15,7 @@ interface OfflineGameRunnerProps {
   topics: Topic[];
   questions: Question[];
   barrahCategories: BarrahCategory[];
+  onQuestionsAdded?: (added: Question[]) => void;
   onJoinOnlineRoom?: (code: string, name: string) => void;
   onExit: () => void;
 }
@@ -26,6 +27,7 @@ export const OfflineGameRunner: React.FC<OfflineGameRunnerProps> = ({
   topics,
   questions,
   barrahCategories,
+  onQuestionsAdded,
   onJoinOnlineRoom,
   onExit,
 }) => {
@@ -71,6 +73,7 @@ export const OfflineGameRunner: React.FC<OfflineGameRunnerProps> = ({
           sections={sections}
           topics={topics}
           questions={questions}
+          onQuestionsAdded={onQuestionsAdded}
           onExit={onExit}
         />
       );

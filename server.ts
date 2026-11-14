@@ -23,7 +23,11 @@ import type {
   Topic,
 } from './src/types/jamr.ts';
 import { DEFAULT_GAMES, DEFAULT_SECTIONS } from './src/data/defaultGames.ts';
-import { buildDefault6000Questions, DEFAULT_100_TOPICS } from './src/data/jamrain100Topics.ts';
+import {
+  buildDefault6000Questions,
+  DEFAULT_100_TOPICS,
+  isLegacyFillerQuestion,
+} from './src/data/jamrain100Topics.ts';
 import { DEFAULT_BARRAH_CATEGORIES } from './src/data/barrahSalfaCategories.ts';
 import { normalizeDigits, sanitizeText } from './src/utils/arabicNormalize.ts';
 import {
@@ -86,10 +90,14 @@ function loadAndReconcileStore(): DataStoreSnapshot {
     return g;
   });
 
+  const cleanedSavedQuestions = Array.isArray(parsed.questions)
+    ? parsed.questions.filter((q) => !isLegacyFillerQuestion(q))
+    : undefined;
+
   const store: DataStoreSnapshot = {
     sections: reconcileById(DEFAULT_SECTIONS, parsed.sections),
     topics: reconcileById(DEFAULT_100_TOPICS, parsed.topics),
-    questions: reconcileById(defaultQuestions, parsed.questions),
+    questions: reconcileById(defaultQuestions, cleanedSavedQuestions),
     games,
     barrahCategories: reconcileById(DEFAULT_BARRAH_CATEGORIES, parsed.barrahCategories),
     reports: Array.isArray(parsed.reports) ? parsed.reports : [],
@@ -195,6 +203,192 @@ app.get('/api/jamrain/data', (_req, res) => {
     topics: dataStore.topics,
     questions: dataStore.questions,
   });
+});
+
+const webSearchRateMap = new Map<string, { count: number; resetAt: number }>();
+
+async function searchWebQuestionsForTopic(topic: Topic): Promise<{
+  addedQuestions: Question[];
+  sources: Array<{ title: string; url: string }>;
+}> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    throw new Error('NO_GEMINI_KEY');
+  }
+
+  const existingForTopic = dataStore.questions
+    .filter((q) => q.topicId === topic.id)
+    .map((q) => q.question)
+    .slice(0, 20);
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+
+  const prompt = `ابحث في مواقع الويب الموثوقة (ويكيبيديا، المواقع الإخبارية والرياضية والعلمية الرسمية) عن معلومات حقيقية ودقيقة وحديثة حول موضوع: "${topic.name}" (قسم: ${topic.category}).
+أنشئ 6 أسئلة مسابقات ثقافية عربية حقيقية وممتعة ومختبرة الدقة 100% مرتبطة حصرياً بهذا الموضوع فقط:
+- سؤالان بقيمة 200 نقطة (معلومة مشهورة وواضحة)
+- سؤالان بقيمة 400 نقطة (معلومة متوسطة العمق أو حدث/رقم محدد)
+- سؤالان بقيمة 600 نقطة (سؤال احترافي دقيق وصعب لمحبي التحدي)
+
+تجنّب تكرار هذه الأسئلة الموجودة مسبقاً:
+${existingForTopic.map((q) => `- ${q}`).join('\n')}
+
+أعد النتيجة كمصفوفة JSON صالحة فقط بدون أي نص إضافي أو علامات شرح خارج المصفوفة، بهذا التنسيق الدقيق:
+[
+  {
+    "points": 200,
+    "question": "نص السؤال الواضح والمباشر بالعربية؟",
+    "answer": "الإجابة الصحيحة الدقيقة والمختصرة",
+    "hint": "تلميح ذكي لا يكشف الإجابة مباشرة",
+    "explanation": "شرح مختصر للمعلومة من الموقع"
+  }
+]`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-4-hydrogen',
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      systemInstruction:
+        'أنت محرر مسابقات عربية محترف تتحقق من كل معلومة عبر بحث جوجل قبل صياغة السؤال. يُمنع منعاً باتاً اختراع حقائق غير مؤكدة أو كتابة أسئلة عامة غير متعلقة بالموضوع. أعد مصفوفة JSON صالحة فقط.',
+    },
+  });
+
+  const rawText = (response.text || '').trim();
+  const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    throw new Error('INVALID_SEARCH_JSON');
+  }
+
+  const parsedItems = JSON.parse(jsonMatch[0]) as Array<{
+    points?: number;
+    question?: string;
+    answer?: string;
+    hint?: string;
+    explanation?: string;
+  }>;
+
+  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const sources: Array<{ title: string; url: string }> = [];
+  for (const ch of chunks) {
+    const uri = ch?.web?.uri;
+    const title = ch?.web?.title;
+    if (uri && !sources.some((s) => s.url === uri)) {
+      sources.push({
+        title: sanitizeText(String(title || 'مصدر ويب موثق'), 120),
+        url: String(uri),
+      });
+    }
+  }
+
+  const primarySource = sources[0];
+  const existingNormalized = new Set(
+    dataStore.questions
+      .filter((q) => q.topicId === topic.id)
+      .map((q) => q.question.trim().toLowerCase())
+  );
+
+  const addedQuestions: Question[] = [];
+  for (const item of parsedItems) {
+    const qText = sanitizeText(String(item.question || ''), 280);
+    const aText = sanitizeText(String(item.answer || ''), 220);
+    if (!qText || !aText || existingNormalized.has(qText.toLowerCase())) continue;
+
+    const ptsNum = Number(item.points);
+    const pts: 200 | 400 | 600 = ptsNum === 600 ? 600 : ptsNum === 400 ? 400 : 200;
+
+    const newQuestion: Question = {
+      id: `web_${topic.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      topicId: topic.id,
+      points: pts,
+      question: qText,
+      answer: aText,
+      hint: item.hint ? sanitizeText(String(item.hint), 180) : undefined,
+      explanation: item.explanation ? sanitizeText(String(item.explanation), 280) : undefined,
+      sourceTitle: primarySource?.title,
+      sourceUrl: primarySource?.url,
+      isWebResearched: true,
+    };
+
+    existingNormalized.add(qText.toLowerCase());
+    dataStore.questions.unshift(newQuestion);
+    addedQuestions.push(newQuestion);
+  }
+
+  return { addedQuestions, sources };
+}
+
+app.post('/api/jamrain/search-questions', async (req, res) => {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const rate = webSearchRateMap.get(ip);
+  if (rate && rate.resetAt > now) {
+    if (rate.count >= 25) {
+      return res.status(429).json({ error: 'تم تجاوز الحد المؤقت لطلبات البحث. حاول بعد دقيقة.' });
+    }
+    rate.count += 1;
+  } else {
+    webSearchRateMap.set(ip, { count: 1, resetAt: now + 2 * 60_000 });
+  }
+
+  const rawIds: string[] = Array.isArray(req.body?.topicIds)
+    ? req.body.topicIds.map((x: unknown) => String(x)).slice(0, 6)
+    : req.body?.topicId
+      ? [String(req.body.topicId)]
+      : [];
+
+  if (rawIds.length === 0) {
+    return res.status(400).json({ error: 'يرجى تحديد موضوع واحد على الأقل للبحث.' });
+  }
+
+  const targetTopics = rawIds
+    .map((id) => dataStore.topics.find((t) => t.id === id))
+    .filter((t): t is Topic => Boolean(t));
+
+  if (targetTopics.length === 0) {
+    return res.status(404).json({ error: 'الموضوع غير موجود.' });
+  }
+
+  try {
+    const allAdded: Question[] = [];
+    const allSources: Array<{ title: string; url: string }> = [];
+
+    for (const topic of targetTopics) {
+      const { addedQuestions, sources } = await searchWebQuestionsForTopic(topic);
+      allAdded.push(...addedQuestions);
+      for (const s of sources) {
+        if (!allSources.some((x) => x.url === s.url)) allSources.push(s);
+      }
+    }
+
+    if (allAdded.length > 0) {
+      persistStore(dataStore);
+    }
+
+    return res.json({
+      ok: true,
+      addedCount: allAdded.length,
+      questions: allAdded,
+      sources: allSources,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg === 'NO_GEMINI_KEY') {
+      return res.status(503).json({
+        error: 'ميزة البحث الحي من الويب تتطلب تهيئة مفتاح GEMINI_API_KEY في إعدادات الخادم (Secrets). الأسئلة المدمجة الحقيقية الـ 1,200 متاحة دائماً للعب!',
+      });
+    }
+    console.warn('[JAMR] Live web question search error:', err);
+    return res.status(502).json({
+      error: 'تعذر جلب أسئلة جديدة من الويب حالياً، ويمكنك المتابعة بالبنك الحقيقي المدمج.',
+    });
+  }
 });
 
 app.get('/api/barrah/categories', (_req, res) => {

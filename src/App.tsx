@@ -165,6 +165,14 @@ export default function App() {
             topics={topics}
             questions={questions}
             barrahCategories={barrahCategories}
+            onQuestionsAdded={(added) => {
+              if (!Array.isArray(added) || added.length === 0) return;
+              setQuestions((prev) => {
+                const seen = new Set(prev.map((q) => q.id));
+                const fresh = added.filter((q) => q && q.id && !seen.has(q.id));
+                return fresh.length > 0 ? [...fresh, ...prev] : prev;
+              });
+            }}
             onJoinOnlineRoom={(code, name) => {
               if (name) handleSaveName(name);
               setView({

@@ -646,34 +646,68 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white sm:col-span-2"
               />
             </div>
-            <button
-              onClick={async () => {
-                if (!qText.trim() || !qAnswer.trim()) return;
-                const res = await authFetch('/api/admin/questions', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    topicId: qTopicId,
-                    points: qPoints,
-                    question: qText.trim(),
-                    answer: qAnswer.trim(),
-                    hint: qHint.trim(),
-                    image: qImage.trim(),
-                    video: qVideo.trim(),
-                  }),
-                });
-                setStore((s) => (s ? { ...s, questions: [res.question, ...s.questions] } : s));
-                setQText('');
-                setQAnswer('');
-                setQHint('');
-                setQImage('');
-                setQVideo('');
-                onDataUpdated();
-                showToast('تمت إضافة السؤال بنجاح');
-              }}
-              className="px-5 py-2.5 rounded-xl bg-orange-500 text-slate-950 font-black text-xs cursor-pointer"
-            >
-              + حفظ السؤال
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={async () => {
+                  if (!qText.trim() || !qAnswer.trim()) return;
+                  const res = await authFetch('/api/admin/questions', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      topicId: qTopicId,
+                      points: qPoints,
+                      question: qText.trim(),
+                      answer: qAnswer.trim(),
+                      hint: qHint.trim(),
+                      image: qImage.trim(),
+                      video: qVideo.trim(),
+                    }),
+                  });
+                  setStore((s) => (s ? { ...s, questions: [res.question, ...s.questions] } : s));
+                  setQText('');
+                  setQAnswer('');
+                  setQHint('');
+                  setQImage('');
+                  setQVideo('');
+                  onDataUpdated();
+                  showToast('تمت إضافة السؤال بنجاح');
+                }}
+                className="px-5 py-2.5 rounded-xl bg-orange-500 text-slate-950 font-black text-xs cursor-pointer"
+              >
+                + حفظ السؤال
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (!qTopicId) return;
+                  showToast('جاري البحث في المواقع وتوليد 6 أسئلة موثّقة...');
+                  try {
+                    const r = await fetch('/api/jamrain/search-questions', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ topicId: qTopicId }),
+                    });
+                    const res = await r.json();
+                    if (!r.ok) {
+                      showToast(res?.error || 'تعذر البحث في الويب حالياً');
+                      return;
+                    }
+                    const added: Question[] = Array.isArray(res.questions) ? res.questions : [];
+                    if (added.length > 0) {
+                      setStore((s) => (s ? { ...s, questions: [...added, ...s.questions] } : s));
+                      onDataUpdated();
+                      showToast(`تمت إضافة ${added.length} أسئلة موثّقة من الويب بنجاح!`);
+                    } else {
+                      showToast('لم يُعثر على أسئلة جديدة غير مكررة');
+                    }
+                  } catch {
+                    showToast('تعذر الاتصال بخدمة البحث');
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-black text-xs cursor-pointer"
+              >
+                🌐 بحث وجلب 6 أسئلة حقيقية من الويب لهذا الموضوع
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -681,6 +715,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               <div key={q.id} className="rounded-xl bg-[#130b22] border border-white/10 p-3 flex items-center justify-between gap-3 text-xs">
                 <div className="min-w-0">
                   <span className="font-black text-amber-300 tabular-nums">[{q.points}] </span>
+                  {q.isWebResearched && <span className="text-emerald-300 font-black ml-1">[ويب 🌐]</span>}
                   <span className="font-bold text-white">{q.question}</span>
                   <span className="text-emerald-400 mr-2">← {q.answer}</span>
                 </div>
