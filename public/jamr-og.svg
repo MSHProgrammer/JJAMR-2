@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#08040d"/>
+      <stop offset="55%" stop-color="#190b28"/>
+      <stop offset="100%" stop-color="#2c1008"/>
+    </linearGradient>
+    <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="50%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="600" cy="240" r="190" fill="#f97316" opacity="0.14"/>
+  <path d="M600 100 C650 175 695 225 680 300 C668 355 635 385 600 385 C565 385 532 355 520 300 C505 225 550 175 600 100 Z" fill="url(#ember)"/>
+  <path d="M600 190 C626 232 645 260 636 302 C630 330 614 346 600 346 C586 346 570 330 564 302 C555 260 574 232 600 190 Z" fill="#fef08a"/>
+  <text x="600" y="470" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="78" font-weight="900">جَمْر | JAMR</text>
+  <text x="600" y="535" text-anchor="middle" fill="#fdba74" font-family="sans-serif" font-size="34" font-weight="700">ولّع جمعتكم — منصة ألعاب الجمعات العربية</text>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "جَمْر | JAMR - ولّع جمعتكم",
+  "description": "منصة ألعاب جَمْر الجماعية (أوفلاين وأونلاين) باللغة العربية — تلفزيون خربان، اسم حيوان نبات جماد بلاد، جَمْرَيْن، حروف مع جَمْر، برا السالفة، ومافيا بدون حكم. مجانية بالكامل للجمعات والأصدقاء.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
