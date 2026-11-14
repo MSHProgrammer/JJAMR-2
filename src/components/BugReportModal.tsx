@@ -59,19 +59,19 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-      <div className="w-full max-w-lg rounded-3xl bg-[#130b22] border border-orange-500/25 shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#0d0718]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#23140E]/45 backdrop-blur-md p-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white border-2 border-amber-300 shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-amber-200 bg-[#FFF8EE]">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-orange-400" />
-            <h2 className="text-lg font-black text-white">الإبلاغ عن خلل أو مشكلة</h2>
+            <AlertTriangle className="w-5 h-5 text-orange-500" />
+            <h2 className="text-lg font-black text-[#23140E]">الإبلاغ عن خلل أو مشكلة</h2>
           </div>
           <button
             onClick={() => {
               SoundFX.playClick();
               onClose();
             }}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 cursor-pointer"
+            className="p-2 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-[#5A3E32] cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -79,16 +79,16 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
 
         {sent ? (
           <div className="p-8 text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-9 h-9" />
             </div>
-            <h3 className="text-xl font-black text-white">تم استلام بلاغك بنجاح!</h3>
-            <p className="text-sm text-slate-300 font-readex">
+            <h3 className="text-xl font-black text-[#23140E]">تم استلام بلاغك بنجاح!</h3>
+            <p className="text-sm text-[#5A3E32] font-readex">
               شكراً لمساهمتك في تحسين منصة جَمْر. سيراجع الفريق بلاغك في أقرب وقت.
             </p>
             <button
               onClick={onClose}
-              className="px-6 py-2.5 rounded-xl bg-orange-500 text-slate-950 font-black text-sm cursor-pointer"
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white font-black text-sm cursor-pointer shadow-sm"
             >
               إغلاق
             </button>
@@ -97,11 +97,11 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">نوع البلاغ</label>
+                <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">نوع البلاغ</label>
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value)}
-                  className="w-full rounded-xl bg-[#0b0614] border border-white/15 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                  className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2.5 text-sm font-bold text-[#23140E] focus:outline-none focus:border-orange-500"
                 >
                   <option value="خلل تقني">خلل تقني</option>
                   <option value="مشكلة في لعبة">مشكلة في لعبة</option>
@@ -110,11 +110,11 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">اللعبة المعنية</label>
+                <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">اللعبة المعنية</label>
                 <select
                   value={gameId}
                   onChange={(e) => setGameId(e.target.value)}
-                  className="w-full rounded-xl bg-[#0b0614] border border-white/15 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                  className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2.5 text-sm font-bold text-[#23140E] focus:outline-none focus:border-orange-500"
                 >
                   <option value="general">المنصة العامة</option>
                   {games.map((g) => (
@@ -127,7 +127,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">وصف المشكلة أو الملاحظة</label>
+              <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">وصف المشكلة أو الملاحظة</label>
               <textarea
                 rows={4}
                 required
@@ -137,39 +137,39 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
                   setError('');
                 }}
                 placeholder="اشرح ما حدث بدقة ليتمكن فريق جَمْر من معالجته سريعاً..."
-                className="w-full rounded-xl bg-[#0b0614] border border-white/15 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-orange-500"
+                className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3.5 py-2.5 text-sm text-[#23140E] placeholder:text-[#9A7B6D] focus:outline-none focus:border-orange-500"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">اسمك</label>
+                <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">اسمك</label>
                 <input
                   type="text"
                   value={reporterName}
                   onChange={(e) => setReporterName(e.target.value)}
                   placeholder="الاسم المستعار"
-                  className="w-full rounded-xl bg-[#0b0614] border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                  className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3.5 py-2.5 text-sm font-bold text-[#23140E] focus:outline-none focus:border-orange-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">وسيلة تواصل (اختياري)</label>
+                <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">وسيلة تواصل (اختياري)</label>
                 <input
                   type="text"
                   value={contact}
                   onChange={(e) => setContact(e.target.value)}
                   placeholder="تويتر / بريد / تيليجرام"
-                  className="w-full rounded-xl bg-[#0b0614] border border-white/15 px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                  className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3.5 py-2.5 text-sm font-bold text-[#23140E] focus:outline-none focus:border-orange-500"
                 />
               </div>
             </div>
 
-            {error && <p className="text-xs text-rose-400 font-bold">{error}</p>}
+            {error && <p className="text-xs text-rose-600 font-bold">{error}</p>}
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-slate-950 font-black py-3 px-6 text-sm cursor-pointer disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white font-black py-3 px-6 text-sm shadow-md cursor-pointer disabled:opacity-60"
             >
               <Send className="w-4 h-4" />
               <span>{submitting ? 'جاري الإرسال...' : 'إرسال البلاغ للإدارة'}</span>

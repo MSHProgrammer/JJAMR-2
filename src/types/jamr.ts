@@ -196,6 +196,12 @@ export interface IsmDispute {
   status: 'pending' | 'approved' | 'rejected';
 }
 
+export interface IsmFieldEvaluation {
+  valid: boolean;
+  source: 'gemini_ai' | 'fusha' | 'saudi' | 'manual' | 'rejected';
+  reason: string;
+}
+
 export interface IsmHayawanState {
   phase: 'lobby' | 'letter_spin' | 'writing' | 'scoring' | 'leaderboard' | 'game_over';
   currentRound: number;
@@ -206,6 +212,8 @@ export interface IsmHayawanState {
   answersByPlayer: Record<string, IsmPlayerAnswers>;
   fieldScoresByPlayer: Record<string, Record<IsmFieldKey, number>>;
   roundTotalsByPlayer: Record<string, number>;
+  reasonsByPlayer?: Record<string, Record<IsmFieldKey, IsmFieldEvaluation>>;
+  analyzedBy?: 'gemini_ai' | 'saudi_arabic_index' | 'manual';
   disputes: IsmDispute[];
   isJudgeRoom: boolean;
   judgeId: string | null;

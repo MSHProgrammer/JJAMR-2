@@ -13,6 +13,7 @@ import type {
   BugReport,
   DataStoreSnapshot,
   GameConfig,
+  IsmFieldEvaluation,
   IsmFieldKey,
   IsmPlayerAnswers,
   MimicSound,
@@ -29,11 +30,13 @@ import {
   isLegacyFillerQuestion,
 } from './src/data/jamrain100Topics.ts';
 import { DEFAULT_BARRAH_CATEGORIES } from './src/data/barrahSalfaCategories.ts';
-import { normalizeDigits, sanitizeText } from './src/utils/arabicNormalize.ts';
+import { checkArabicSaudiDictionary } from './src/data/arabicSaudiDictionary.ts';
+import { normalizeArabic, normalizeDigits, sanitizeText, wordStartsWithLetter } from './src/utils/arabicNormalize.ts';
 import {
   appendSystemChat,
   applyBrokenTvReaction,
   applyBrokenTvStepSubmission,
+  areAllIsmFieldsFilled,
   computeIsmScores,
   createInitialBrokenTvState,
   createInitialIsmState,
@@ -393,6 +396,217 @@ app.post('/api/jamrain/search-questions', async (req, res) => {
 
 app.get('/api/barrah/categories', (_req, res) => {
   res.json({ categories: dataStore.barrahCategories });
+});
+
+app.post('/api/ism/analyze-answers', async (req, res) => {
+  const letter = sanitizeText(String(req.body?.letter || 'أ'), 4) || 'أ';
+  const playersInput = Array.isArray(req.body?.players) ? req.body.players : [];
+  const answersByPlayer = (req.body?.answersByPlayer || {}) as Record<string, IsmPlayerAnswers>;
+  const fields: IsmFieldKey[] = ['name', 'animal', 'plant', 'object', 'country'];
+  const fieldLabels: Record<IsmFieldKey, string> = {
+    name: 'اسم إنسان',
+    animal: 'حيوان أو طائر أو كائن',
+    plant: 'نبات أو فاكهة أو خضار أو عشب',
+    object: 'جماد أو أداة أو غرض',
+    country: 'دولة أو مدينة أو منطقة (عربية أو سعودية أو عالمية)',
+  };
+
+  const playersList: Array<{ id: string; name: string }> = playersInput
+    .map((p: { id?: unknown; name?: unknown }) => ({
+      id: String(p?.id || ''),
+      name: String(p?.name || 'لاعب'),
+    }))
+    .filter((p: { id: string; name: string }) => p.id);
+
+  const reasonsByPlayer: Record<string, Record<IsmFieldKey, IsmFieldEvaluation>> = {};
+  const unknownMap = new Map<string, { field: IsmFieldKey; word: string }>();
+
+  for (const p of playersList) {
+    reasonsByPlayer[p.id] = {
+      name: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      animal: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      plant: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      object: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      country: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+    };
+
+    const pAns = answersByPlayer[p.id];
+    for (const field of fields) {
+      const word = sanitizeText(String(pAns?.[field] || ''), 60);
+      if (!word) continue;
+
+      const check = checkArabicSaudiDictionary(word, letter, field);
+      if (!check.validStart && !wordStartsWithLetter(word, letter)) {
+        reasonsByPlayer[p.id][field] = {
+          valid: false,
+          source: 'rejected',
+          reason: `لا تبدأ بحرف (${letter})`,
+        };
+      } else if (check.knownInIndex) {
+        reasonsByPlayer[p.id][field] = {
+          valid: true,
+          source: check.source === 'saudi' ? 'saudi' : 'fusha',
+          reason: check.source === 'saudi' ? 'مقبولة — فهرس اللهجة السعودية 🇸🇦' : 'مقبولة — الفهرس العربي 📖',
+        };
+      } else {
+        const key = `${field}::${normalizeArabic(word)}`;
+        if (!unknownMap.has(key)) {
+          unknownMap.set(key, { field, word });
+        }
+      }
+    }
+  }
+
+  let usedGemini = false;
+  const aiVerdicts = new Map<string, { valid: boolean; dialect: 'fusha' | 'saudi' | 'rejected'; reason: string }>();
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (unknownMap.size > 0 && apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: { 'User-Agent': 'aistudio-build' },
+        },
+      });
+
+      const items = Array.from(unknownMap.entries()).map(([k, v]) => ({
+        key: k,
+        category: fieldLabels[v.field],
+        word: v.word,
+      }));
+
+      const prompt = `أنت محكّم خبير في لعبة "اسم حيوان نبات جماد بلاد" باللغة العربية الفصحى وباللهجة السعودية والخليجية.
+الحرف المطلوب لهذه الجولة هو: (${letter}) (مع قبول همزات الألف أ/إ/آ/ا والتاء المربوطة/الهاء).
+
+قيّم القائمة التالية بسرعة ودقة: كل عنصر مقبول إذا كان يبدأ بحرف (${letter}) ويدل فعلاً على الفئة المحددة سواء في العربية الفصحى أو اللهجة السعودية/الخليجية الدارجة (مثل: ضب، جربوع، دلة، فنجال، مركى، عرار، سدر، الأحساء، حاشي... إلخ). وارفض الكلمات العشوائية أو غير المتعلقة بالفئة.
+
+القائمة:
+${items.map((it) => `- key="${it.key}" | الفئة: ${it.category} | الكلمة: "${it.word}"`).join('\n')}`;
+
+      const aiPromise = ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          systemInstruction: 'أعد مصفوفة JSON صالحة فقط بدون أي نص إضافي.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                key: { type: Type.STRING },
+                valid: { type: Type.BOOLEAN },
+                dialect: { type: Type.STRING },
+                reason: { type: Type.STRING },
+              },
+              required: ['key', 'valid', 'dialect', 'reason'],
+            },
+          },
+        },
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('GEMINI_ANALYZE_TIMEOUT')), 7000)
+      );
+
+      const response = await Promise.race([aiPromise, timeoutPromise]);
+
+      const rawText = (response.text || '').trim();
+      const parsed = JSON.parse(rawText) as Array<{
+        key: string;
+        valid: boolean;
+        dialect: string;
+        reason: string;
+      }>;
+      if (Array.isArray(parsed)) {
+        usedGemini = true;
+        for (const item of parsed) {
+          if (item && item.key) {
+            const d = item.dialect === 'saudi' ? 'saudi' : item.valid ? 'fusha' : 'rejected';
+            aiVerdicts.set(item.key, {
+              valid: Boolean(item.valid),
+              dialect: d,
+              reason: sanitizeText(String(item.reason || (item.valid ? 'مقبولة' : 'مرفوضة')), 90),
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[JAMR] Gemini AI ism batch analysis fallback to Arabic/Saudi index:', err);
+    }
+  }
+
+  const fieldScoresByPlayer: Record<string, Record<IsmFieldKey, number>> = {};
+  const roundTotalsByPlayer: Record<string, number> = {};
+
+  for (const p of playersList) {
+    fieldScoresByPlayer[p.id] = { name: 0, animal: 0, plant: 0, object: 0, country: 0 };
+    roundTotalsByPlayer[p.id] = 0;
+
+    const pAns = answersByPlayer[p.id];
+    for (const field of fields) {
+      const word = sanitizeText(String(pAns?.[field] || ''), 60);
+      if (!word) continue;
+
+      const currentEval = reasonsByPlayer[p.id][field];
+      if (!currentEval.valid && currentEval.reason.includes('لا تبدأ بحرف')) {
+        continue;
+      }
+
+      if (!currentEval.valid) {
+        const key = `${field}::${normalizeArabic(word)}`;
+        const aiVerdict = aiVerdicts.get(key);
+        if (aiVerdict) {
+          reasonsByPlayer[p.id][field] = {
+            valid: aiVerdict.valid,
+            source: aiVerdict.valid ? 'gemini_ai' : 'rejected',
+            reason: aiVerdict.reason,
+          };
+        } else {
+          // Graceful fallback heuristic if Gemini unavailable: accept genuine multi-letter Arabic words starting with letter
+          const arabicCharsOnly = /^[\u0600-\u06FF\s]{2,}$/.test(word);
+          reasonsByPlayer[p.id][field] = arabicCharsOnly
+            ? { valid: true, source: 'fusha', reason: 'مقبولة حسب الفهرس العربي وتطابق الحرف' }
+            : { valid: false, source: 'rejected', reason: 'كلمة غير صالحة' };
+        }
+      }
+    }
+  }
+
+  for (const field of fields) {
+    const counts: Record<string, number> = {};
+    const validNormByPlayer: Record<string, string> = {};
+
+    for (const p of playersList) {
+      const word = sanitizeText(String(answersByPlayer[p.id]?.[field] || ''), 60);
+      if (!word) continue;
+      if (reasonsByPlayer[p.id][field].valid) {
+        const norm = normalizeArabic(word);
+        validNormByPlayer[p.id] = norm;
+        counts[norm] = (counts[norm] || 0) + 1;
+      }
+    }
+
+    for (const p of playersList) {
+      const norm = validNormByPlayer[p.id];
+      if (!norm) {
+        fieldScoresByPlayer[p.id][field] = 0;
+      } else {
+        const pts = counts[norm] > 1 ? 5 : 10;
+        fieldScoresByPlayer[p.id][field] = pts;
+        roundTotalsByPlayer[p.id] += pts;
+      }
+    }
+  }
+
+  return res.json({
+    ok: true,
+    analyzedBy: usedGemini ? 'gemini_ai' : 'saudi_arabic_index',
+    fieldScoresByPlayer,
+    roundTotalsByPlayer,
+    reasonsByPlayer,
+  });
 });
 
 app.post('/api/reports', (req, res) => {
@@ -1363,15 +1577,22 @@ wss.on('connection', (ws) => {
             ...room.ismHayawan.answersByPlayer,
             ...(data.answers ? { [pid]: data.answers as IsmPlayerAnswers } : {}),
           };
+          const stopperAnswers = mergedAnswers[pid];
+          if (!areAllIsmFieldsFilled(stopperAnswers)) {
+            sendWs(ws, { type: 'error', message: 'أكمل كتابة جميع الخانات الـ 5 قبل الضغط على ستوب!' });
+            return;
+          }
           const updatedIsm: NonNullable<RoomState['ismHayawan']> = {
             ...room.ismHayawan,
             phase: 'scoring',
             stoppedByPlayerName: stopper?.name || 'أحد اللاعبين',
             answersByPlayer: mergedAnswers,
           };
-          const { fieldScoresByPlayer, roundTotalsByPlayer } = computeIsmScores(updatedIsm, room.players);
+          const { fieldScoresByPlayer, roundTotalsByPlayer, reasonsByPlayer } = computeIsmScores(updatedIsm, room.players);
           updatedIsm.fieldScoresByPlayer = fieldScoresByPlayer;
           updatedIsm.roundTotalsByPlayer = roundTotalsByPlayer;
+          updatedIsm.reasonsByPlayer = reasonsByPlayer;
+          updatedIsm.analyzedBy = 'saudi_arabic_index';
           room = {
             ...room,
             ismHayawan: updatedIsm,
@@ -1379,6 +1600,60 @@ wss.on('connection', (ws) => {
               ...p,
               score: p.score + (roundTotalsByPlayer[p.id] || 0),
             })),
+          };
+        }
+        break;
+      }
+      case 'ism_hayawan_apply_ai_analysis': {
+        if (room.ismHayawan && pid === room.hostId) {
+          const nextFieldScores = data.fieldScoresByPlayer as Record<string, Record<IsmFieldKey, number>>;
+          const nextRoundTotals = data.roundTotalsByPlayer as Record<string, number>;
+          const nextReasons = data.reasonsByPlayer as Record<string, Record<IsmFieldKey, IsmFieldEvaluation>> | undefined;
+          const prevTotals = room.ismHayawan.roundTotalsByPlayer || {};
+          room = {
+            ...room,
+            players: room.players.map((p) => {
+              const prevPts = prevTotals[p.id] || 0;
+              const nextPts = nextRoundTotals?.[p.id] ?? prevPts;
+              return { ...p, score: Math.max(0, p.score - prevPts + nextPts) };
+            }),
+            ismHayawan: {
+              ...room.ismHayawan,
+              fieldScoresByPlayer: nextFieldScores || room.ismHayawan.fieldScoresByPlayer,
+              roundTotalsByPlayer: nextRoundTotals || room.ismHayawan.roundTotalsByPlayer,
+              reasonsByPlayer: nextReasons || room.ismHayawan.reasonsByPlayer,
+              analyzedBy: (data.analyzedBy as 'gemini_ai' | 'saudi_arabic_index' | 'manual') || 'gemini_ai',
+            },
+          };
+        }
+        break;
+      }
+      case 'ism_hayawan_set_field_score': {
+        if (room.ismHayawan && pid === room.hostId) {
+          const targetId = String(data.targetPlayerId || '');
+          const field = data.field as IsmFieldKey;
+          const newPts = Math.max(0, Math.min(10, Number(data.points || 0)));
+          const prevPts = room.ismHayawan.fieldScoresByPlayer[targetId]?.[field] || 0;
+          const diff = newPts - prevPts;
+          room = {
+            ...room,
+            players: room.players.map((p) =>
+              p.id === targetId ? { ...p, score: Math.max(0, p.score + diff) } : p
+            ),
+            ismHayawan: {
+              ...room.ismHayawan,
+              fieldScoresByPlayer: {
+                ...room.ismHayawan.fieldScoresByPlayer,
+                [targetId]: {
+                  ...(room.ismHayawan.fieldScoresByPlayer[targetId] || { name: 0, animal: 0, plant: 0, object: 0, country: 0 }),
+                  [field]: newPts,
+                },
+              },
+              roundTotalsByPlayer: {
+                ...room.ismHayawan.roundTotalsByPlayer,
+                [targetId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[targetId] || 0) + diff),
+              },
+            },
           };
         }
         break;
@@ -1508,8 +1783,11 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'barrah_next_pair': {
-        if (room.barrah) {
-          const pair = [...room.players].sort(() => Math.random() - 0.5);
+        if (room.barrah && pid === room.hostId) {
+          let pair = [...room.players].sort(() => Math.random() - 0.5);
+          if (room.players.length >= 3 && pair[0]?.id === room.barrah.askerId && pair[1]?.id === room.barrah.answererId) {
+            pair = [pair[1], pair[2] || pair[0]];
+          }
           room = {
             ...room,
             barrah: {

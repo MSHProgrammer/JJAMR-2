@@ -4,6 +4,7 @@ import type {
   BrokenTvReactionType,
   BrokenTvState,
   ChatMessage,
+  IsmFieldEvaluation,
   IsmFieldKey,
   IsmHayawanState,
   IsmPlayerAnswers,
@@ -12,6 +13,7 @@ import type {
 } from '../types/jamr.ts';
 import { ARABIC_LETTERS } from '../data/huroofBank.ts';
 import { DEFAULT_BARRAH_CATEGORIES } from '../data/barrahSalfaCategories.ts';
+import { checkArabicSaudiDictionary } from '../data/arabicSaudiDictionary.ts';
 import { normalizeArabic, wordStartsWithLetter } from '../utils/arabicNormalize.ts';
 
 export function generateRoomCode(): string {
@@ -59,24 +61,41 @@ export function createInitialIsmState(
     answersByPlayer: {},
     fieldScoresByPlayer: {},
     roundTotalsByPlayer: {},
+    reasonsByPlayer: {},
+    analyzedBy: 'saudi_arabic_index',
     disputes: [],
     isJudgeRoom,
     judgeId,
   };
 }
 
+export function areAllIsmFieldsFilled(answers?: Partial<IsmPlayerAnswers> | null): boolean {
+  if (!answers) return false;
+  const fields: IsmFieldKey[] = ['name', 'animal', 'plant', 'object', 'country'];
+  return fields.every((f) => typeof answers[f] === 'string' && answers[f]!.trim().length > 0);
+}
+
 export function computeIsmScores(state: IsmHayawanState, players: Player[]): {
   fieldScoresByPlayer: Record<string, Record<IsmFieldKey, number>>;
   roundTotalsByPlayer: Record<string, number>;
+  reasonsByPlayer: Record<string, Record<IsmFieldKey, IsmFieldEvaluation>>;
 } {
   const fields: IsmFieldKey[] = ['name', 'animal', 'plant', 'object', 'country'];
   const activePlayers = players.filter((p) => !p.isJudge);
   const fieldScoresByPlayer: Record<string, Record<IsmFieldKey, number>> = {};
   const roundTotalsByPlayer: Record<string, number> = {};
+  const reasonsByPlayer: Record<string, Record<IsmFieldKey, IsmFieldEvaluation>> = {};
 
   for (const p of activePlayers) {
     fieldScoresByPlayer[p.id] = { name: 0, animal: 0, plant: 0, object: 0, country: 0 };
     roundTotalsByPlayer[p.id] = 0;
+    reasonsByPlayer[p.id] = {
+      name: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      animal: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      plant: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      object: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+      country: { valid: false, source: 'rejected', reason: 'لم تُكتب إجابة' },
+    };
   }
 
   for (const field of fields) {
@@ -85,10 +104,32 @@ export function computeIsmScores(state: IsmHayawanState, players: Player[]): {
 
     for (const p of activePlayers) {
       const raw = state.answersByPlayer[p.id]?.[field] || '';
-      if (wordStartsWithLetter(raw, state.currentLetter)) {
-        const norm = normalizeArabic(raw);
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+
+      const check = checkArabicSaudiDictionary(trimmed, state.currentLetter, field);
+      if (check.validStart || wordStartsWithLetter(trimmed, state.currentLetter)) {
+        const norm = normalizeArabic(trimmed);
         validByPlayer[p.id] = norm;
         normalizedCounts[norm] = (normalizedCounts[norm] || 0) + 1;
+
+        reasonsByPlayer[p.id][field] = check.knownInIndex
+          ? {
+              valid: true,
+              source: check.source === 'saudi' ? 'saudi' : 'fusha',
+              reason: check.source === 'saudi' ? 'موثقة في فهرس اللهجة السعودية' : 'موثقة في الفهرس العربي',
+            }
+          : {
+              valid: true,
+              source: 'fusha',
+              reason: 'تبدأ بالحرف المطلوب',
+            };
+      } else {
+        reasonsByPlayer[p.id][field] = {
+          valid: false,
+          source: 'rejected',
+          reason: `لا تبدأ بحرف (${state.currentLetter})`,
+        };
       }
     }
 
@@ -104,7 +145,7 @@ export function computeIsmScores(state: IsmHayawanState, players: Player[]): {
     }
   }
 
-  return { fieldScoresByPlayer, roundTotalsByPlayer };
+  return { fieldScoresByPlayer, roundTotalsByPlayer, reasonsByPlayer };
 }
 
 export function startBarrahOnlineRound(
@@ -118,17 +159,26 @@ export function startBarrahOnlineRound(
       : categories.filter((c) => c.id === categoryId);
   const chosenCat =
     pool[Math.floor(Math.random() * pool.length)] || categories[0];
-  const words = [...chosenCat.words].sort(() => Math.random() - 0.5);
-  const secretWord = words[0] || 'قهوة عربية';
-  const allWords = Array.from(
-    new Set(
-      categories.flatMap((c) => c.words).filter((w) => w !== secretWord)
-    )
-  ).sort(() => Math.random() - 0.5);
+  const uniqueCategoryWords = Array.from(new Set(chosenCat.words.map((w) => w.trim()).filter(Boolean)));
+  const shuffledCategoryWords = [...uniqueCategoryWords].sort(() => Math.random() - 0.5);
+  const secretWord = shuffledCategoryWords[0] || 'قهوة عربية';
+  const sameTopicDistractors = shuffledCategoryWords.filter((w) => w !== secretWord).slice(0, 9);
+
+  const fallbackAllWords =
+    sameTopicDistractors.length < 9
+      ? Array.from(
+          new Set(
+            categories
+              .flatMap((c) => c.words)
+              .filter((w) => w !== secretWord && !sameTopicDistractors.includes(w))
+          )
+        ).sort(() => Math.random() - 0.5)
+      : [];
+
   const distractorWords = Array.from(
-    new Set([secretWord, ...words.slice(1, 8), ...allWords])
+    new Set([secretWord, ...sameTopicDistractors, ...fallbackAllWords])
   )
-    .slice(0, 8)
+    .slice(0, 10)
     .sort(() => Math.random() - 0.5);
 
   const players = room.players.filter((p) => p.connected);

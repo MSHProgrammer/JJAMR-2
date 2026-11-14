@@ -49,7 +49,6 @@ function getHoneyNeighbors(r: number, c: number): Array<[number, number]> {
 }
 
 function checkHexWinner(grid: HexCell[][]): 'green' | 'orange' | null {
-  // Green: connects col 0 to col 4 horizontally
   const greenQueue: Array<[number, number]> = [];
   const greenVisited = new Set<string>();
   for (let r = 0; r < 5; r++) {
@@ -70,7 +69,6 @@ function checkHexWinner(grid: HexCell[][]): 'green' | 'orange' | null {
     }
   }
 
-  // Orange: connects row 0 to row 4 vertically
   const orangeQueue: Array<[number, number]> = [];
   const orangeVisited = new Set<string>();
   for (let c = 0; c < 5; c++) {
@@ -188,18 +186,18 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 text-[#24141D]">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Purple Control Sidebar */}
-        <div className="lg:col-span-4 rounded-3xl bg-[#241345] border-2 border-[#4c359e] p-5 space-y-5 shadow-2xl">
+        {/* Sunny Control Sidebar */}
+        <div className="lg:col-span-4 rounded-3xl bg-white border-2 border-amber-200 p-5 space-y-5 shadow-[0_12px_30px_rgba(255,107,0,0.08)]">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-black text-white">🐝 حروف مع جَمْر</h1>
+            <h1 className="text-2xl font-black text-[#24141D]">🐝 حروف مع جَمْر</h1>
             <button
               onClick={() => {
                 SoundFX.playClick();
                 onExit();
               }}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-black text-white flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-200 text-xs font-black text-[#24141D] flex items-center gap-1 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>خروج</span>
@@ -207,29 +205,29 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-2xl bg-emerald-500/15 border border-emerald-500/40 p-3.5 space-y-2">
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-300 p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-emerald-300">المسار الأفقي (يمين ⟷ يسار)</span>
-                <span className="text-lg font-black text-white tabular-nums">{greenRounds} جولات</span>
+                <span className="text-xs font-black text-[#047857]">المسار الأفقي (يمين ⟷ يسار)</span>
+                <span className="text-lg font-black text-[#24141D] tabular-nums">{greenRounds} جولات</span>
               </div>
               <input
                 type="text"
                 value={greenName}
                 onChange={(e) => setGreenName(e.target.value)}
-                className="w-full rounded-xl bg-black/35 border border-emerald-500/30 px-3 py-2 text-sm font-black text-white"
+                className="w-full rounded-xl bg-white border border-emerald-300 px-3 py-2 text-sm font-black text-[#24141D]"
               />
             </div>
 
-            <div className="rounded-2xl bg-orange-500/15 border border-orange-500/40 p-3.5 space-y-2">
+            <div className="rounded-2xl bg-[#FFF3DF] border border-[#FFB703] p-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-orange-300">المسار العمودي (أعلى ↕ أسفل)</span>
-                <span className="text-lg font-black text-white tabular-nums">{orangeRounds} جولات</span>
+                <span className="text-xs font-black text-[#D9480F]">المسار العمودي (أعلى ↕ أسفل)</span>
+                <span className="text-lg font-black text-[#24141D] tabular-nums">{orangeRounds} جولات</span>
               </div>
               <input
                 type="text"
                 value={orangeName}
                 onChange={(e) => setOrangeName(e.target.value)}
-                className="w-full rounded-xl bg-black/35 border border-orange-500/30 px-3 py-2 text-sm font-black text-white"
+                className="w-full rounded-xl bg-white border border-amber-300 px-3 py-2 text-sm font-black text-[#24141D]"
               />
             </div>
           </div>
@@ -237,7 +235,7 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
           <div className="grid grid-cols-2 gap-2.5">
             <button
               onClick={resetBoard}
-              className="py-3 px-3 rounded-xl bg-[#4c359e] hover:bg-[#5c42ba] text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-3 px-3 rounded-xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
             >
               <Shuffle className="w-4 h-4" />
               <span>خلط الحروف</span>
@@ -248,7 +246,7 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
                 setOrangeRounds(0);
                 resetBoard();
               }}
-              className="py-3 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-3 px-3 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-200 text-[#24141D] font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
               <span>تصفير النتيجة</span>
@@ -256,14 +254,14 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
           </div>
 
           {roundWinner && (
-            <div className="rounded-2xl bg-amber-500/20 border-2 border-amber-400 p-4 text-center space-y-3">
-              <Trophy className="w-10 h-10 text-amber-400 mx-auto" />
-              <div className="text-lg font-black text-white">
+            <div className="rounded-2xl bg-[#FFF3DF] border-2 border-[#FFB703] p-4 text-center space-y-3">
+              <Trophy className="w-10 h-10 text-[#FFB703] mx-auto" />
+              <div className="text-lg font-black text-[#24141D]">
                 فاز {roundWinner === 'green' ? greenName : orangeName} بالمسار المتصل! 🎉
               </div>
               <button
                 onClick={resetBoard}
-                className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-950 font-black text-sm cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-[#FF6B00] text-white font-black text-sm cursor-pointer"
               >
                 جولة جديدة
               </button>
@@ -272,18 +270,18 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
         </div>
 
         {/* 5x5 Staggered Honeycomb Board */}
-        <div className="lg:col-span-8 rounded-3xl bg-[#130b22] border border-white/15 p-4 sm:p-6 shadow-2xl">
+        <div className="lg:col-span-8 rounded-3xl bg-white border-2 border-amber-200 p-4 sm:p-6 shadow-[0_12px_30px_rgba(36,20,29,0.07)]">
           {/* Top Orange Border */}
-          <div className="h-4 rounded-t-2xl bg-gradient-to-l from-orange-500 to-amber-500 mb-3 flex items-center justify-center text-[10px] font-black text-slate-950">
+          <div className="h-5 rounded-t-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] mb-3 flex items-center justify-center text-[11px] font-black text-white">
             {orangeName}
           </div>
 
           <div className="flex items-stretch gap-2 sm:gap-3">
             {/* Right Green Border */}
-            <div className="w-4 rounded-xl bg-emerald-500 shrink-0" title={greenName} />
+            <div className="w-4 rounded-xl bg-[#10B981] shrink-0" title={greenName} />
 
             {/* Staggered Hex Rows */}
-            <div className="flex-1 flex flex-col items-center justify-center py-2 select-none overflow-x-auto">
+            <div className="flex-1 flex flex-col items-center justify-center py-3 px-2 rounded-2xl bg-[#FFF8EE] select-none overflow-x-auto">
               {grid.map((row, rIdx) => (
                 <div
                   key={rIdx}
@@ -296,10 +294,10 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
                   {row.map((cell) => {
                     const bgClass =
                       cell.owner === 'green'
-                        ? 'bg-emerald-500 text-slate-950'
+                        ? 'bg-[#10B981] text-white'
                         : cell.owner === 'orange'
-                          ? 'bg-orange-500 text-slate-950'
-                          : 'bg-[#f8fafc] hover:bg-amber-200 text-[#1e1b4b]';
+                          ? 'bg-[#FF6B00] text-white'
+                          : 'bg-white hover:bg-[#FFE8C8] text-[#24141D] border border-amber-300';
                     return (
                       <button
                         key={`${cell.row}-${cell.col}`}
@@ -307,7 +305,7 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
                         style={{
                           clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
                         }}
-                        className={`w-14 h-16 sm:w-20 sm:h-22 flex items-center justify-center text-xl sm:text-3xl font-black transition-transform hover:scale-105 cursor-pointer shadow-lg ${bgClass}`}
+                        className={`w-14 h-16 sm:w-20 sm:h-22 flex items-center justify-center text-xl sm:text-3xl font-black transition-transform hover:scale-105 cursor-pointer shadow-md ${bgClass}`}
                       >
                         {cell.letter}
                       </button>
@@ -318,11 +316,11 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
             </div>
 
             {/* Left Green Border */}
-            <div className="w-4 rounded-xl bg-emerald-500 shrink-0" title={greenName} />
+            <div className="w-4 rounded-xl bg-[#10B981] shrink-0" title={greenName} />
           </div>
 
           {/* Bottom Orange Border */}
-          <div className="h-4 rounded-b-2xl bg-gradient-to-l from-orange-500 to-amber-500 mt-3 flex items-center justify-center text-[10px] font-black text-slate-950">
+          <div className="h-5 rounded-b-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] mt-3 flex items-center justify-center text-[11px] font-black text-white">
             {orangeName}
           </div>
         </div>
@@ -330,29 +328,29 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
 
       {/* Question Modal */}
       {activeCell && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div className="w-full max-w-lg rounded-3xl bg-[#180e2c] border-2 border-amber-400/50 p-6 shadow-2xl space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#24141D]/55 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-[#FFFBF5] border-2 border-[#FF6B00] p-6 shadow-2xl space-y-5 text-[#24141D]">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 font-black text-2xl flex items-center justify-center">
+                <span className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FFB703] to-[#FF6B00] text-white font-black text-2xl flex items-center justify-center">
                   {activeCell.letter}
                 </span>
                 <div>
-                  <div className="text-xs font-bold text-amber-300">حرف الخلية</div>
-                  <div className="text-sm font-black text-white">أجب بحرف ({activeCell.letter})</div>
+                  <div className="text-xs font-bold text-[#D9480F]">حرف الخلية</div>
+                  <div className="text-sm font-black text-[#24141D]">أجب بحرف ({activeCell.letter})</div>
                 </div>
               </div>
-              <span className={`text-xl font-black tabular-nums ${timer <= 5 ? 'text-rose-400 animate-pulse' : 'text-amber-300'}`}>
+              <span className={`text-xl font-black tabular-nums ${timer <= 5 ? 'text-[#E62E1B]' : 'text-[#D9480F]'}`}>
                 ⏱️ {timer}ث
               </span>
             </div>
 
-            <div className="rounded-2xl bg-black/35 border border-white/10 p-5 text-center space-y-3">
-              <h3 className="text-xl sm:text-2xl font-black text-white leading-relaxed">
+            <div className="rounded-2xl bg-white border border-amber-200 p-5 text-center space-y-3">
+              <h3 className="text-xl sm:text-2xl font-black text-[#24141D] leading-relaxed">
                 {activeCell.q.question}
               </h3>
               {showAnswer && (
-                <div className="pt-3 border-t border-white/10 text-lg font-black text-emerald-300">
+                <div className="pt-3 border-t border-amber-100 text-lg font-black text-[#047857]">
                   الإجابة: {activeCell.q.answer}
                 </div>
               )}
@@ -364,7 +362,7 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
                   SoundFX.playClick();
                   setShowAnswer(true);
                 }}
-                className="w-full py-3.5 rounded-2xl bg-amber-400 text-slate-950 font-black text-base flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-l from-[#FFB703] to-[#FF6B00] text-white font-black text-base flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Eye className="w-5 h-5" />
                 <span>إظهار الإجابة</span>
@@ -373,21 +371,21 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
               <div className="grid grid-cols-3 gap-2.5">
                 <button
                   onClick={() => assignCell('green')}
-                  className="py-3 px-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
+                  className="py-3 px-2 rounded-xl bg-[#10B981] text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
                   <span>{greenName}</span>
                 </button>
                 <button
                   onClick={() => assignCell('orange')}
-                  className="py-3 px-2 rounded-xl bg-orange-500 text-slate-950 font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
+                  className="py-3 px-2 rounded-xl bg-[#FF6B00] text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
                   <span>{orangeName}</span>
                 </button>
                 <button
                   onClick={() => assignCell(null)}
-                  className="py-3 px-2 rounded-xl bg-white/10 text-slate-200 font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
+                  className="py-3 px-2 rounded-xl bg-[#FFF8EE] border border-amber-300 text-[#24141D] font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                   <span>إلغاء / لا أحد</span>

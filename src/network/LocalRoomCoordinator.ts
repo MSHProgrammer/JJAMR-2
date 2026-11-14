@@ -1,7 +1,8 @@
 import Peer, { DataConnection } from 'peerjs';
-import {
+import type {
   BarrahCategory,
   BrokenTvReactionType,
+  IsmFieldEvaluation,
   IsmFieldKey,
   IsmPlayerAnswers,
   Player,
@@ -11,6 +12,7 @@ import {
   appendSystemChat,
   applyBrokenTvReaction,
   applyBrokenTvStepSubmission,
+  areAllIsmFieldsFilled,
   computeIsmScores,
   createInitialBrokenTvState,
   createInitialIsmState,
@@ -416,15 +418,22 @@ export class LocalRoomCoordinator {
             ...room.ismHayawan.answersByPlayer,
             ...(action.answers ? { [pid]: action.answers as IsmPlayerAnswers } : {}),
           };
+          const stopperAnswers = mergedAnswers[pid];
+          if (!areAllIsmFieldsFilled(stopperAnswers)) {
+            this.listener({ type: 'error', message: 'يجب كتابة إجابة في جميع الخانات الـ 5 قبل الضغط على ستوب!' });
+            break;
+          }
           const updatedIsm: NonNullable<RoomState['ismHayawan']> = {
             ...room.ismHayawan,
             phase: 'scoring',
             stoppedByPlayerName: stopper?.name || 'أحد اللاعبين',
             answersByPlayer: mergedAnswers,
           };
-          const { fieldScoresByPlayer, roundTotalsByPlayer } = computeIsmScores(updatedIsm, room.players);
+          const { fieldScoresByPlayer, roundTotalsByPlayer, reasonsByPlayer } = computeIsmScores(updatedIsm, room.players);
           updatedIsm.fieldScoresByPlayer = fieldScoresByPlayer;
           updatedIsm.roundTotalsByPlayer = roundTotalsByPlayer;
+          updatedIsm.reasonsByPlayer = reasonsByPlayer;
+          updatedIsm.analyzedBy = 'saudi_arabic_index';
           room = {
             ...room,
             ismHayawan: updatedIsm,
@@ -432,6 +441,60 @@ export class LocalRoomCoordinator {
               ...p,
               score: p.score + (roundTotalsByPlayer[p.id] || 0),
             })),
+          };
+        }
+        break;
+      }
+      case 'ism_hayawan_apply_ai_analysis': {
+        if (room.ismHayawan && pid === room.hostId) {
+          const nextFieldScores = action.fieldScoresByPlayer as Record<string, Record<IsmFieldKey, number>>;
+          const nextRoundTotals = action.roundTotalsByPlayer as Record<string, number>;
+          const nextReasons = action.reasonsByPlayer as Record<string, Record<IsmFieldKey, IsmFieldEvaluation>> | undefined;
+          const prevTotals = room.ismHayawan.roundTotalsByPlayer || {};
+          room = {
+            ...room,
+            players: room.players.map((p) => {
+              const prevRoundPts = prevTotals[p.id] || 0;
+              const newRoundPts = nextRoundTotals?.[p.id] ?? prevRoundPts;
+              return { ...p, score: Math.max(0, p.score - prevRoundPts + newRoundPts) };
+            }),
+            ismHayawan: {
+              ...room.ismHayawan,
+              fieldScoresByPlayer: nextFieldScores || room.ismHayawan.fieldScoresByPlayer,
+              roundTotalsByPlayer: nextRoundTotals || room.ismHayawan.roundTotalsByPlayer,
+              reasonsByPlayer: nextReasons || room.ismHayawan.reasonsByPlayer,
+              analyzedBy: (action.analyzedBy as 'gemini_ai' | 'saudi_arabic_index' | 'manual') || 'gemini_ai',
+            },
+          };
+        }
+        break;
+      }
+      case 'ism_hayawan_set_field_score': {
+        if (room.ismHayawan && pid === room.hostId) {
+          const targetId = String(action.targetPlayerId || '');
+          const field = action.field as IsmFieldKey;
+          const newPts = Math.max(0, Math.min(10, Number(action.points || 0)));
+          const prevPts = room.ismHayawan.fieldScoresByPlayer[targetId]?.[field] || 0;
+          const diff = newPts - prevPts;
+          room = {
+            ...room,
+            players: room.players.map((p) =>
+              p.id === targetId ? { ...p, score: Math.max(0, p.score + diff) } : p
+            ),
+            ismHayawan: {
+              ...room.ismHayawan,
+              fieldScoresByPlayer: {
+                ...room.ismHayawan.fieldScoresByPlayer,
+                [targetId]: {
+                  ...(room.ismHayawan.fieldScoresByPlayer[targetId] || { name: 0, animal: 0, plant: 0, object: 0, country: 0 }),
+                  [field]: newPts,
+                },
+              },
+              roundTotalsByPlayer: {
+                ...room.ismHayawan.roundTotalsByPlayer,
+                [targetId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[targetId] || 0) + diff),
+              },
+            },
           };
         }
         break;
@@ -561,8 +624,11 @@ export class LocalRoomCoordinator {
         break;
       }
       case 'barrah_next_pair': {
-        if (room.barrah) {
-          const pair = [...room.players].sort(() => Math.random() - 0.5);
+        if (room.barrah && pid === room.hostId) {
+          let pair = [...room.players].sort(() => Math.random() - 0.5);
+          if (room.players.length >= 3 && pair[0]?.id === room.barrah.askerId && pair[1]?.id === room.barrah.answererId) {
+            pair = [pair[1], pair[2] || pair[0]];
+          }
           room = {
             ...room,
             barrah: {

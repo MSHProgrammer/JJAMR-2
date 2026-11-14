@@ -8,8 +8,12 @@
 
   body {
     font-family: 'Alexandria', 'Readex Pro', system-ui, sans-serif;
-    background-color: #08040d;
-    color: #f1f5f9;
+    background-color: #FFFBF5;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(251, 191, 36, 0.16), transparent 34%),
+      radial-gradient(circle at 88% 12%, rgba(249, 115, 22, 0.12), transparent 32%),
+      radial-gradient(circle at 50% 92%, rgba(239, 68, 68, 0.08), transparent 40%);
+    color: #23140E;
   }
 
   .tabular-nums {
@@ -39,21 +43,21 @@
   }
 }
 
-/* Custom scrollbar for Arabic dark theme */
+/* Custom scrollbar for sunlit warm JAMR theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 10, 26, 0.7);
+  background: #FFF3E0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(249, 115, 22, 0.35);
+  background: rgba(249, 115, 22, 0.45);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(249, 115, 22, 0.6);
+  background: rgba(234, 88, 12, 0.72);
 }

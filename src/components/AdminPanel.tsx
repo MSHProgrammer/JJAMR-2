@@ -206,22 +206,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
   if (!token) {
     return (
       <div className="max-w-md mx-auto px-4 py-14">
-        <div className="rounded-3xl bg-[#130b22] border border-amber-500/30 p-7 shadow-2xl space-y-6">
+        <div className="rounded-3xl bg-white border-2 border-amber-300 p-7 shadow-xl space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <Shield className="w-6 h-6 text-amber-400" />
-              <h1 className="text-xl font-black text-white">دخول إدارة جَمْر</h1>
+              <Shield className="w-6 h-6 text-orange-500" />
+              <h1 className="text-xl font-black text-[#23140E]">دخول إدارة جَمْر</h1>
             </div>
-            <button onClick={onExit} className="text-xs font-bold text-slate-400 hover:text-white cursor-pointer">
+            <button onClick={onExit} className="text-xs font-bold text-[#7C5D4F] hover:text-[#23140E] cursor-pointer">
               رجوع
             </button>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-2">رمز المرور الإداري</label>
+              <label className="block text-xs font-bold text-[#5A3E32] mb-2">رمز المرور الإداري</label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-[#9A7B6D] absolute right-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
                   required
@@ -231,16 +231,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     setAuthError('');
                   }}
                   placeholder="أدخل رمز الإدارة"
-                  className="w-full rounded-xl bg-black/45 border border-white/15 pr-10 pl-4 py-3 text-white text-sm focus:outline-none focus:border-amber-500"
+                  className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 pr-10 pl-4 py-3 text-[#23140E] text-sm focus:outline-none focus:border-orange-500"
                 />
               </div>
-              {authError && <p className="text-xs text-rose-400 font-bold mt-2">{authError}</p>}
+              {authError && <p className="text-xs text-rose-600 font-bold mt-2">{authError}</p>}
             </div>
 
             <button
               type="submit"
               disabled={loggingIn}
-              className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm cursor-pointer disabled:opacity-60"
+              className="w-full py-3.5 rounded-xl bg-gradient-to-l from-amber-500 to-orange-500 hover:brightness-105 text-white font-black text-sm shadow-sm cursor-pointer disabled:opacity-60"
             >
               {loggingIn ? 'جاري التحقق...' : 'دخول لوحة التحكم'}
             </button>
@@ -253,12 +253,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-[#130b22] border border-amber-500/30 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-white border-2 border-amber-200 shadow-sm p-5">
         <div className="flex items-center gap-3">
-          <Shield className="w-8 h-8 text-amber-400" />
+          <Shield className="w-8 h-8 text-orange-500" />
           <div>
-            <h1 className="text-2xl font-black text-white">لوحة إدارة منصة جَمْر</h1>
-            <p className="text-xs text-slate-400">
+            <h1 className="text-2xl font-black text-[#23140E]">لوحة إدارة منصة جَمْر</h1>
+            <p className="text-xs font-bold text-[#6B4E40]">
               {stats
                 ? `الغرف المباشرة: ${stats.totals.rooms} · المواضيع: ${stats.totals.topics} · الأسئلة: ${stats.totals.questions} · بلاغات جديدة: ${stats.totals.reportsNew}`
                 : 'جاري تحميل الإحصائيات...'}
@@ -269,9 +269,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => void loadAdminData()}
-            className="px-3.5 py-2 rounded-xl bg-white/10 text-xs font-black text-white flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-200 text-xs font-black text-[#23140E] flex items-center gap-1.5 cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5 text-orange-500" />
             <span>تحديث</span>
           </button>
           <button
@@ -280,7 +280,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               window.sessionStorage.removeItem('jamr_admin_token');
               onExit();
             }}
-            className="px-3.5 py-2 rounded-xl bg-rose-500/20 text-rose-200 text-xs font-black flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-black flex items-center gap-1.5 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>تسجيل خروج</span>
@@ -289,7 +289,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       </div>
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-black text-sm shadow-2xl">
+        <div className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm shadow-2xl">
           {toast}
         </div>
       )}
@@ -311,7 +311,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
             key={t.id}
             onClick={() => setTab(t.id as AdminTab)}
             className={`shrink-0 whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-black cursor-pointer ${
-              tab === t.id ? 'bg-amber-500 text-slate-950' : 'bg-[#130b22] text-slate-300 border border-white/10'
+              tab === t.id
+                ? 'bg-gradient-to-l from-orange-500 to-amber-500 text-white shadow-sm'
+                : 'bg-white text-[#5A3E32] border border-amber-200 hover:bg-amber-50'
             }`}
           >
             {t.label}
@@ -323,7 +325,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {tab === 'games' && store && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-black text-white">إدارة الألعاب ({store.games.length})</h2>
+            <h2 className="text-lg font-black text-[#23140E]">إدارة الألعاب ({store.games.length})</h2>
             <button
               onClick={async () => {
                 const res = await authFetch('/api/admin/games/reset', { method: 'POST' });
@@ -331,7 +333,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 onDataUpdated();
                 showToast('تمت استعادة كتالوج الألعاب الافتراضي');
               }}
-              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-black text-amber-300 flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-xs font-black text-orange-700 flex items-center gap-1.5 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>استعادة الافتراضي</span>
@@ -340,9 +342,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {store.games.map((g) => (
-              <div key={g.id} className="rounded-2xl bg-[#130b22] border border-white/10 p-4 flex items-center justify-between gap-4">
+              <div key={g.id} className="rounded-2xl bg-white border border-amber-200 shadow-xs p-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-14 h-14 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="w-14 h-14 rounded-xl bg-[#FFF8EE] border border-amber-200 flex items-center justify-center overflow-hidden shrink-0">
                     {g.imageUrl ? (
                       <img src={g.imageUrl} alt={g.title} className="w-full h-full object-cover" />
                     ) : (
@@ -350,15 +352,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     )}
                   </div>
                   <div className="min-w-0">
-                    <div className="font-black text-white text-sm truncate">{g.title}</div>
-                    <div className="text-xs text-slate-400 truncate">{g.category}</div>
+                    <div className="font-black text-[#23140E] text-sm truncate">{g.title}</div>
+                    <div className="text-xs text-[#7C5D4F] truncate">{g.category}</div>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => setLogoModalGame(g)}
-                    className="px-3 py-1.5 rounded-lg bg-orange-500/20 text-orange-300 text-xs font-black flex items-center gap-1 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-orange-100 text-orange-800 border border-orange-200 text-xs font-black flex items-center gap-1 cursor-pointer"
                   >
                     <ImageIcon className="w-3.5 h-3.5" />
                     <span>تغيير الشعار 🎨</span>
@@ -374,7 +376,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                       showToast('تم تحديث حالة الصيانة');
                     }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer ${
-                      g.underMaintenance ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-slate-300'
+                      g.underMaintenance ? 'bg-amber-400 text-[#23140E]' : 'bg-[#FFF8EE] border border-amber-200 text-[#5A3E32]'
                     }`}
                   >
                     <Wrench className="w-3.5 h-3.5" />
@@ -388,7 +390,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                         onDataUpdated();
                         showToast('تم حذف اللعبة');
                       }}
-                      className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 cursor-pointer"
+                      className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -399,22 +401,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
           </div>
 
           {/* Add Custom Game */}
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-3">
-            <h3 className="text-sm font-black text-amber-300">إضافة لعبة مخصصة جديدة</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 shadow-xs p-5 space-y-3">
+            <h3 className="text-sm font-black text-orange-700">إضافة لعبة مخصصة جديدة</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
                 type="text"
                 value={newGameTitle}
                 onChange={(e) => setNewGameTitle(e.target.value)}
                 placeholder="اسم اللعبة..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={newGameDesc}
                 onChange={(e) => setNewGameDesc(e.target.value)}
                 placeholder="وصف مختصر..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white sm:col-span-2"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E] sm:col-span-2"
               />
             </div>
             <button
@@ -430,7 +432,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 onDataUpdated();
                 showToast('تمت إضافة اللعبة');
               }}
-              className="px-5 py-2.5 rounded-xl bg-orange-500 text-slate-950 font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-orange-500 text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>إضافة اللعبة</span>
@@ -442,20 +444,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {/* TAB 2: TOPICS */}
       {tab === 'topics' && store && (
         <div className="space-y-5">
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-3">
-            <h3 className="text-sm font-black text-amber-300">إضافة موضوع جديد لجَمْرَيْن</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 shadow-xs p-5 space-y-3">
+            <h3 className="text-sm font-black text-orange-700">إضافة موضوع جديد لجَمْرَيْن</h3>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <input
                 type="text"
                 value={newTopicName}
                 onChange={(e) => setNewTopicName(e.target.value)}
                 placeholder="اسم الموضوع..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <select
                 value={newTopicCat}
                 onChange={(e) => setNewTopicCat(e.target.value)}
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               >
                 {store.sections.map((sec) => (
                   <option key={sec.id} value={sec.name}>{sec.name}</option>
@@ -466,7 +468,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 value={newTopicIcon}
                 onChange={(e) => setNewTopicIcon(e.target.value)}
                 placeholder="إيموجي"
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <button
                 onClick={async () => {
@@ -480,7 +482,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   onDataUpdated();
                   showToast('تمت إضافة الموضوع');
                 }}
-                className="rounded-xl bg-orange-500 text-slate-950 font-black text-xs cursor-pointer"
+                className="rounded-xl bg-orange-500 text-white font-black text-xs cursor-pointer"
               >
                 + إضافة موضوع
               </button>
@@ -489,9 +491,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[520px] overflow-y-auto">
             {store.topics.map((t) => (
-              <div key={t.id} className="rounded-2xl bg-[#130b22] border border-white/10 p-3.5 flex items-center justify-between gap-3">
+              <div key={t.id} className="rounded-2xl bg-white border border-amber-200 p-3.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-11 h-11 rounded-xl bg-black/40 overflow-hidden flex items-center justify-center shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-[#FFF8EE] border border-amber-200 overflow-hidden flex items-center justify-center shrink-0">
                     {t.customImage || t.coverImage ? (
                       <img src={t.customImage || t.coverImage} alt={t.name} className="w-full h-full object-cover" />
                     ) : (
@@ -499,14 +501,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     )}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-black text-white truncate">{t.name}</div>
-                    <div className="text-[11px] text-slate-400 truncate">{t.category}</div>
+                    <div className="text-xs font-black text-[#23140E] truncate">{t.name}</div>
+                    <div className="text-[11px] text-[#7C5D4F] truncate">{t.category}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => setTopicImgModal(t)}
-                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 text-[11px] font-black cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-100 text-amber-900 text-[11px] font-black cursor-pointer"
                   >
                     صورة
                   </button>
@@ -517,7 +519,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                       onDataUpdated();
                       showToast('تم حذف الموضوع');
                     }}
-                    className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 cursor-pointer"
+                    className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -531,19 +533,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {/* TAB 3: SECTIONS */}
       {tab === 'sections' && store && (
         <div className="space-y-4">
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 flex flex-wrap gap-3">
+          <div className="rounded-2xl bg-white border border-amber-200 p-5 flex flex-wrap gap-3">
             <input
               type="text"
               value={newSectionName}
               onChange={(e) => setNewSectionName(e.target.value)}
               placeholder="اسم القسم..."
-              className="flex-1 min-w-[200px] rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+              className="flex-1 min-w-[200px] rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
             />
             <input
               type="text"
               value={newSectionIcon}
               onChange={(e) => setNewSectionIcon(e.target.value)}
-              className="w-20 rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white text-center"
+              className="w-20 rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E] text-center"
             />
             <button
               onClick={async () => {
@@ -557,7 +559,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 onDataUpdated();
                 showToast('تمت إضافة القسم');
               }}
-              className="px-5 py-2 rounded-xl bg-orange-500 text-slate-950 font-black text-xs cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-orange-500 text-white font-black text-xs cursor-pointer"
             >
               + إضافة قسم
             </button>
@@ -565,8 +567,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {store.sections.map((sec: Section) => (
-              <div key={sec.id} className="rounded-2xl bg-[#130b22] border border-white/10 p-4 flex items-center justify-between">
-                <div className="font-black text-sm text-white">
+              <div key={sec.id} className="rounded-2xl bg-white border border-amber-200 p-4 flex items-center justify-between">
+                <div className="font-black text-sm text-[#23140E]">
                   {sec.icon} {sec.name}
                 </div>
                 <button
@@ -576,7 +578,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     onDataUpdated();
                     showToast('تم حذف القسم');
                   }}
-                  className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 cursor-pointer"
+                  className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -589,13 +591,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {/* TAB 4: QUESTIONS BANK */}
       {tab === 'questions' && store && (
         <div className="space-y-5">
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-3">
-            <h3 className="text-sm font-black text-amber-300">إضافة سؤال جديد</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 p-5 space-y-3">
+            <h3 className="text-sm font-black text-orange-700">إضافة سؤال جديد</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <select
                 value={qTopicId}
                 onChange={(e) => setQTopicId(e.target.value)}
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               >
                 {store.topics.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
@@ -604,7 +606,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               <select
                 value={qPoints}
                 onChange={(e) => setQPoints(Number(e.target.value) as 200 | 400 | 600)}
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               >
                 <option value={200}>200 نقطة</option>
                 <option value={400}>400 نقطة</option>
@@ -615,35 +617,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 value={qText}
                 onChange={(e) => setQText(e.target.value)}
                 placeholder="نص السؤال..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={qAnswer}
                 onChange={(e) => setQAnswer(e.target.value)}
                 placeholder="الإجابة المعتمدة..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={qHint}
                 onChange={(e) => setQHint(e.target.value)}
                 placeholder="تلميح اختياري..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={qImage}
                 onChange={(e) => setQImage(e.target.value)}
                 placeholder="رابط صورة اختياري..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={qVideo}
                 onChange={(e) => setQVideo(e.target.value)}
                 placeholder="رابط فيديو يوتيوب/MP4 اختياري..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white sm:col-span-2"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E] sm:col-span-2"
               />
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -671,7 +673,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   onDataUpdated();
                   showToast('تمت إضافة السؤال بنجاح');
                 }}
-                className="px-5 py-2.5 rounded-xl bg-orange-500 text-slate-950 font-black text-xs cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-orange-500 text-white font-black text-xs cursor-pointer"
               >
                 + حفظ السؤال
               </button>
@@ -703,7 +705,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     showToast('تعذر الاتصال بخدمة البحث');
                   }
                 }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-black text-xs cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-900 font-black text-xs cursor-pointer"
               >
                 🌐 بحث وجلب 6 أسئلة حقيقية من الويب لهذا الموضوع
               </button>
@@ -712,12 +714,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {store.questions.slice(0, 60).map((q: Question) => (
-              <div key={q.id} className="rounded-xl bg-[#130b22] border border-white/10 p-3 flex items-center justify-between gap-3 text-xs">
+              <div key={q.id} className="rounded-xl bg-white border border-amber-200 p-3 flex items-center justify-between gap-3 text-xs">
                 <div className="min-w-0">
-                  <span className="font-black text-amber-300 tabular-nums">[{q.points}] </span>
-                  {q.isWebResearched && <span className="text-emerald-300 font-black ml-1">[ويب 🌐]</span>}
-                  <span className="font-bold text-white">{q.question}</span>
-                  <span className="text-emerald-400 mr-2">← {q.answer}</span>
+                  <span className="font-black text-orange-600 tabular-nums">[{q.points}] </span>
+                  {q.isWebResearched && <span className="text-emerald-700 font-black ml-1">[ويب 🌐]</span>}
+                  <span className="font-bold text-[#23140E]">{q.question}</span>
+                  <span className="text-emerald-700 font-bold mr-2">← {q.answer}</span>
                 </div>
                 <button
                   onClick={async () => {
@@ -726,7 +728,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     onDataUpdated();
                     showToast('تم حذف السؤال');
                   }}
-                  className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 shrink-0 cursor-pointer"
+                  className="p-1.5 rounded-lg bg-rose-100 text-rose-700 shrink-0 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -739,29 +741,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {/* TAB 5: BARRAH CATEGORIES */}
       {tab === 'barrah' && store && (
         <div className="space-y-5">
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-3">
-            <h3 className="text-sm font-black text-cyan-300">إضافة قسم جديد لبرا السالفة</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 p-5 space-y-3">
+            <h3 className="text-sm font-black text-teal-700">إضافة قسم جديد لبرا السالفة</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
                 type="text"
                 value={bName}
                 onChange={(e) => setBName(e.target.value)}
                 placeholder="اسم القسم..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={bIcon}
                 onChange={(e) => setBIcon(e.target.value)}
                 placeholder="أيقونة"
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={bDesc}
                 onChange={(e) => setBDesc(e.target.value)}
                 placeholder="وصف القسم..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
             </div>
             <textarea
@@ -769,7 +771,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               value={bWordsText}
               onChange={(e) => setBWordsText(e.target.value)}
               placeholder="الكلمات مفصولة بفاصلة (مثال: قهوة، شاهي، موكا، ماتشا)..."
-              className="w-full rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+              className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
             />
             <button
               onClick={async () => {
@@ -786,7 +788,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 onDataUpdated();
                 showToast('تمت إضافة قسم برا السالفة');
               }}
-              className="px-5 py-2 rounded-xl bg-cyan-500 text-slate-950 font-black text-xs cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-teal-600 text-white font-black text-xs cursor-pointer"
             >
               + إضافة القسم
             </button>
@@ -794,10 +796,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {store.barrahCategories.map((cat: BarrahCategory) => (
-              <div key={cat.id} className="rounded-2xl bg-[#130b22] border border-white/10 p-4 flex items-start justify-between gap-3">
+              <div key={cat.id} className="rounded-2xl bg-white border border-amber-200 p-4 flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-black text-white text-sm">{cat.icon} {cat.name}</div>
-                  <div className="text-xs text-slate-400 mt-1">{cat.words.length} كلمة: {cat.words.slice(0, 6).join('، ')}...</div>
+                  <div className="font-black text-[#23140E] text-sm">{cat.icon} {cat.name}</div>
+                  <div className="text-xs text-[#6B4E40] mt-1">{cat.words.length} كلمة: {cat.words.slice(0, 6).join('، ')}...</div>
                 </div>
                 <button
                   onClick={async () => {
@@ -806,7 +808,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     onDataUpdated();
                     showToast('تم حذف القسم');
                   }}
-                  className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 cursor-pointer"
+                  className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -819,38 +821,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {/* TAB 6: SOUND MIMIC BANK & AUDIO EXTRACTOR */}
       {tab === 'mimic' && store && (
         <div className="space-y-5">
-          <div className="rounded-2xl bg-amber-500/15 border border-amber-500/35 p-4 text-xs font-bold text-amber-200">
+          <div className="rounded-2xl bg-amber-50 border border-amber-300 p-4 text-xs font-bold text-amber-900">
             🔧 ملاحظة: لعبة "تقليد الأصوات" مقفلة تحت الصيانة أمام اللاعبين، ويمكنك هنا تجهيز مكتبة المقاطع الصوتية واستخراج الصوت من الفيديو أو الملفات الصوتية.
           </div>
 
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-4">
-            <h3 className="text-sm font-black text-amber-300">استوديو استخراج وضغط الصوت</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 p-5 space-y-4">
+            <h3 className="text-sm font-black text-orange-700">استوديو استخراج وضغط الصوت</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
                 type="text"
                 value={mTitle}
                 onChange={(e) => setMTitle(e.target.value)}
                 placeholder="عنوان الصوت (مثال: ضحكة شريرة)..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={mCat}
                 onChange={(e) => setMCat(e.target.value)}
                 placeholder="التصنيف..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
               <input
                 type="text"
                 value={mHint}
                 onChange={(e) => setMHint(e.target.value)}
                 placeholder="تلميح للأداء..."
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm text-[#23140E]"
               />
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <label className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-black text-white cursor-pointer">
+              <label className="px-4 py-2.5 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-200 text-xs font-black text-[#23140E] cursor-pointer">
                 <span>{extractingAudio ? 'جاري استخراج الصوت...' : 'اختر ملف صوت أو فيديو للاستخراج 🎵'}</span>
                 <input
                   type="file"
@@ -897,7 +899,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   setMAudioData('');
                   showToast('تم حفظ المقطع في بنك تقليد الأصوات');
                 }}
-                className="px-5 py-2.5 rounded-xl bg-orange-500 text-slate-950 font-black text-xs cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-orange-500 text-white font-black text-xs cursor-pointer"
               >
                 + حفظ المقطع
               </button>
@@ -906,13 +908,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {store.mimicSounds.map((snd: MimicSound) => (
-              <div key={snd.id} className="rounded-2xl bg-[#130b22] border border-white/10 p-4 flex items-center justify-between gap-3">
+              <div key={snd.id} className="rounded-2xl bg-white border border-amber-200 p-4 flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <div className="font-black text-white text-sm flex items-center gap-2">
-                    <Volume2 className="w-4 h-4 text-amber-400" />
+                  <div className="font-black text-[#23140E] text-sm flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-orange-500" />
                     <span>{snd.title}</span>
                   </div>
-                  <div className="text-xs text-slate-400">{snd.category} {snd.durationSec ? `· ${snd.durationSec}ث` : ''}</div>
+                  <div className="text-xs text-[#6B4E40]">{snd.category} {snd.durationSec ? `· ${snd.durationSec}ث` : ''}</div>
                   {snd.audioDataUrl && <audio controls src={snd.audioDataUrl} className="h-8 mt-1" />}
                 </div>
                 <button
@@ -921,7 +923,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     setStore((s) => (s ? { ...s, mimicSounds: s.mimicSounds.filter((x) => x.id !== snd.id) } : s));
                     showToast('تم حذف المقطع');
                   }}
-                  className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 cursor-pointer"
+                  className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -933,17 +935,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
       {/* TAB 7: AI GAME DESIGNER */}
       {tab === 'ai' && (
-        <div className="rounded-3xl bg-[#130b22] border border-orange-500/30 p-6 space-y-5">
+        <div className="rounded-3xl bg-white border-2 border-amber-200 p-6 space-y-5">
           <div className="flex items-center gap-2.5">
-            <Sparkles className="w-6 h-6 text-amber-400" />
-            <h2 className="text-xl font-black text-white">مصمم الألعاب الذكي للإدارة</h2>
+            <Sparkles className="w-6 h-6 text-orange-500" />
+            <h2 className="text-xl font-black text-[#23140E]">مصمم الألعاب الذكي للإدارة</h2>
           </div>
           <textarea
             rows={3}
             value={aiPrompt}
             onChange={(e) => setAiPrompt(e.target.value)}
             placeholder="صف فكرة اللعبة الجديدة بالعربية (مثال: لعبة تحدي لهجات خليجية بين فريقين مع مؤقت)..."
-            className="w-full rounded-2xl bg-black/40 border border-white/15 p-4 text-sm text-white"
+            className="w-full rounded-2xl bg-[#FFF8EE] border border-amber-200 p-4 text-sm text-[#23140E]"
           />
           <button
             disabled={aiLoading || !aiPrompt.trim()}
@@ -960,17 +962,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 setAiLoading(false);
               }
             }}
-            className="px-6 py-3 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-slate-950 font-black text-sm cursor-pointer disabled:opacity-50"
+            className="px-6 py-3 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white font-black text-sm cursor-pointer disabled:opacity-50"
           >
             {aiLoading ? 'جاري التصميم...' : 'توليد لعبة بالذكاء الاصطناعي ✨'}
           </button>
 
           {aiDraftGame && (
-            <div className="rounded-2xl bg-black/35 border border-emerald-500/35 p-5 space-y-3">
-              <div className="text-lg font-black text-white">{aiDraftGame.icon} {aiDraftGame.title}</div>
-              <p className="text-xs text-amber-300 font-bold">{aiDraftGame.subtitle}</p>
-              <p className="text-sm text-slate-300">{aiDraftGame.description}</p>
-              <ul className="text-xs text-slate-300 list-disc pr-5 space-y-1">
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-300 p-5 space-y-3">
+              <div className="text-lg font-black text-[#23140E]">{aiDraftGame.icon} {aiDraftGame.title}</div>
+              <p className="text-xs text-orange-700 font-bold">{aiDraftGame.subtitle}</p>
+              <p className="text-sm text-[#5A3E32]">{aiDraftGame.description}</p>
+              <ul className="text-xs text-[#23140E] list-disc pr-5 space-y-1">
                 {aiDraftGame.rules.map((r, i) => <li key={i}>{r}</li>)}
               </ul>
               <button
@@ -984,7 +986,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   onDataUpdated();
                   showToast('تم نشر اللعبة في الكتالوج!');
                 }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-black text-xs cursor-pointer"
               >
                 اعتماد ونشر اللعبة في المنصة ✅
               </button>
@@ -997,22 +999,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {tab === 'reports' && store && (
         <div className="space-y-3">
           {store.reports.length === 0 ? (
-            <div className="rounded-2xl bg-[#130b22] border border-white/10 p-10 text-center text-slate-400 text-sm">
+            <div className="rounded-2xl bg-white border border-amber-200 p-10 text-center text-[#7C5D4F] text-sm">
               لا توجد بلاغات حالياً.
             </div>
           ) : (
             store.reports.map((rep: BugReport) => (
-              <div key={rep.id} className="rounded-2xl bg-[#130b22] border border-white/10 p-4 flex flex-wrap items-start justify-between gap-4">
+              <div key={rep.id} className="rounded-2xl bg-white border border-amber-200 p-4 flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1.5 max-w-2xl">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-black text-orange-300">{rep.type}</span>
+                    <span className="font-black text-orange-700">{rep.type}</span>
                     <span>·</span>
-                    <span className="font-bold text-white">{rep.gameTitle}</span>
+                    <span className="font-bold text-[#23140E]">{rep.gameTitle}</span>
                     <span>·</span>
-                    <span className="text-slate-400">بواسطة: {rep.reporterName}</span>
-                    {rep.contact && <span className="text-teal-300">({rep.contact})</span>}
+                    <span className="text-[#7C5D4F]">بواسطة: {rep.reporterName}</span>
+                    {rep.contact && <span className="text-teal-700 font-bold">({rep.contact})</span>}
                   </div>
-                  <p className="text-sm text-slate-200 font-readex">{rep.description}</p>
+                  <p className="text-sm text-[#3F291E] font-readex">{rep.description}</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1028,7 +1030,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                       );
                       showToast('تم تحديث حالة البلاغ');
                     }}
-                    className="rounded-lg bg-black/40 border border-white/15 px-2.5 py-1.5 text-xs text-white"
+                    className="rounded-lg bg-[#FFF8EE] border border-amber-200 px-2.5 py-1.5 text-xs font-bold text-[#23140E]"
                   >
                     <option value="new">جديد</option>
                     <option value="investigating">قيد المراجعة</option>
@@ -1040,7 +1042,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                       setStore((s) => (s ? { ...s, reports: s.reports.filter((x) => x.id !== rep.id) } : s));
                       showToast('تم حذف البلاغ');
                     }}
-                    className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 cursor-pointer"
+                    className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1054,25 +1056,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       {/* TAB 9: LIVE ROOMS & EXPORT/IMPORT */}
       {tab === 'rooms' && (
         <div className="space-y-6">
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-4">
-            <h3 className="text-base font-black text-white">الغرف المباشرة النشطة الآن ({stats?.liveRooms.length || 0})</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 p-5 space-y-4">
+            <h3 className="text-base font-black text-[#23140E]">الغرف المباشرة النشطة الآن ({stats?.liveRooms.length || 0})</h3>
             {stats && stats.liveRooms.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {stats.liveRooms.map((r) => (
-                  <div key={r.code} className="rounded-xl bg-black/35 border border-white/10 p-3.5 text-xs space-y-1">
-                    <div className="font-black text-amber-300">غرفة {r.code}</div>
-                    <div className="text-white">اللعبة: {r.gameId} · الحالة: {r.status}</div>
-                    <div className="text-slate-400 tabular-nums">اللاعبون: {r.playersCount}/{r.maxPlayers}</div>
+                  <div key={r.code} className="rounded-xl bg-[#FFF8EE] border border-amber-200 p-3.5 text-xs space-y-1">
+                    <div className="font-black text-orange-700">غرفة {r.code}</div>
+                    <div className="text-[#23140E] font-bold">اللعبة: {r.gameId} · الحالة: {r.status}</div>
+                    <div className="text-[#6B4E40] tabular-nums">اللاعبون: {r.playersCount}/{r.maxPlayers}</div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-slate-400">لا توجد غرف أونلاين مفتوحة في هذه اللحظة.</p>
+              <p className="text-xs text-[#7C5D4F]">لا توجد غرف أونلاين مفتوحة في هذه اللحظة.</p>
             )}
           </div>
 
-          <div className="rounded-2xl bg-[#130b22] border border-white/10 p-5 space-y-4">
-            <h3 className="text-base font-black text-white">تصدير واستيراد النسخة الاحتياطية (JSON)</h3>
+          <div className="rounded-2xl bg-white border border-amber-200 p-5 space-y-4">
+            <h3 className="text-base font-black text-[#23140E]">تصدير واستيراد النسخة الاحتياطية (JSON)</h3>
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={async () => {
@@ -1086,7 +1088,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   URL.revokeObjectURL(url);
                   showToast('تم تصدير النسخة الاحتياطية');
                 }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>تصدير JSON كامل</span>
@@ -1095,13 +1097,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               <select
                 value={importMode}
                 onChange={(e) => setImportMode(e.target.value as 'merge' | 'replace')}
-                className="rounded-xl bg-black/40 border border-white/15 px-3 py-2 text-xs text-white"
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs font-bold text-[#23140E]"
               >
                 <option value="merge">استيراد بوضع الدمج (Merge)</option>
                 <option value="replace">استيراد بوضع الاستبدال (Replace)</option>
               </select>
 
-              <label className="px-5 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer">
+              <label className="px-5 py-2.5 rounded-xl bg-amber-500 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer">
                 <Upload className="w-4 h-4" />
                 <span>استيراد ملف JSON</span>
                 <input
@@ -1130,13 +1132,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
       {/* GAME LOGO MODAL */}
       {logoModalGame && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-[#140b24] border border-orange-500/35 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#23140E]/45 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white border-2 border-amber-300 p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-white">تغيير شعار: {logoModalGame.title}</h3>
-              <button onClick={() => setLogoModalGame(null)} className="cursor-pointer"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-black text-[#23140E]">تغيير شعار: {logoModalGame.title}</h3>
+              <button onClick={() => setLogoModalGame(null)} className="cursor-pointer text-[#5A3E32]"><X className="w-5 h-5" /></button>
             </div>
-            <label className="block w-full py-8 rounded-2xl border-2 border-dashed border-orange-500/40 text-center text-sm font-black text-amber-300 cursor-pointer hover:bg-white/5">
+            <label className="block w-full py-8 rounded-2xl border-2 border-dashed border-orange-300 bg-[#FFF8EE] text-center text-sm font-black text-orange-700 cursor-pointer hover:bg-amber-50">
               اضغط لرفع صورة شعار من جهازك (يتم ضغطها تلقائياً)
               <input
                 type="file"
@@ -1173,7 +1175,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   onDataUpdated();
                   showToast('تمت إزالة الشعار المخصص');
                 }}
-                className="w-full py-2.5 rounded-xl bg-rose-500/20 text-rose-300 font-black text-xs cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-rose-100 text-rose-700 font-black text-xs cursor-pointer"
               >
                 إزالة الشعار والرجوع للأيقونة الافتراضية
               </button>
@@ -1184,13 +1186,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
       {/* TOPIC IMAGE MODAL */}
       {topicImgModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-[#140b24] border border-amber-500/35 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#23140E]/45 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white border-2 border-amber-300 p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-white">صورة موضوع: {topicImgModal.name}</h3>
-              <button onClick={() => setTopicImgModal(null)} className="cursor-pointer"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-black text-[#23140E]">صورة موضوع: {topicImgModal.name}</h3>
+              <button onClick={() => setTopicImgModal(null)} className="cursor-pointer text-[#5A3E32]"><X className="w-5 h-5" /></button>
             </div>
-            <label className="block w-full py-7 rounded-2xl border-2 border-dashed border-amber-500/40 text-center text-sm font-black text-amber-300 cursor-pointer hover:bg-white/5">
+            <label className="block w-full py-7 rounded-2xl border-2 border-dashed border-amber-300 bg-[#FFF8EE] text-center text-sm font-black text-amber-800 cursor-pointer hover:bg-amber-50">
               رفع صورة من جهازك
               <input
                 type="file"
@@ -1233,7 +1235,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                     onDataUpdated();
                     showToast('تم اختيار الأيقونة الكرتونية');
                   }}
-                  className="w-10 h-10 rounded-xl bg-white/10 hover:bg-amber-500/30 text-xl cursor-pointer flex items-center justify-center"
+                  className="w-10 h-10 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-200 text-xl cursor-pointer flex items-center justify-center"
                 >
                   {ic}
                 </button>

@@ -124,7 +124,7 @@ export default function App() {
   const isInMatch = view.kind === 'offline' || (view.kind === 'online' && onlineMatchActive);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#08040d] text-slate-100">
+    <div className="min-h-screen flex flex-col bg-transparent text-[#23140E]">
       <Header
         playerName={playerName}
         onUpdatePlayerName={handleSaveName}

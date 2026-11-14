@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Flame,
   Pencil,
   Check,
   RotateCcw,
@@ -9,8 +8,10 @@ import {
   Volume2,
   VolumeX,
   Shield,
+  Sparkles,
 } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
+import { JamrFlameLogo, FestiveGarlandStrip } from './FestiveDecor';
 
 interface HeaderProps {
   playerName: string;
@@ -49,8 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[#0c0716]/90 backdrop-blur-xl border-b border-amber-500/20">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex items-center justify-between gap-3">
+    <header className="sticky top-0 z-40 w-full bg-[#FFFBF5]/92 backdrop-blur-xl border-b border-amber-200/80 shadow-[0_6px_24px_-12px_rgba(249,115,22,0.22)]">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3">
         {/* Right Zone: Brand */}
         <button
           onClick={() => {
@@ -59,17 +60,17 @@ export const Header: React.FC<HeaderProps> = ({
           }}
           className="flex items-center gap-2.5 text-right shrink-0 cursor-pointer group"
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 flex items-center justify-center shadow-md shadow-orange-600/30 group-hover:scale-105 transition-transform">
-            <Flame className="w-6 h-6 text-white" />
+          <div className="rounded-xl shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform">
+            <JamrFlameLogo size={42} />
           </div>
           <div className="flex flex-col leading-tight">
             <div className="flex items-center gap-1.5">
-              <span className="text-lg sm:text-xl font-black text-white whitespace-nowrap">جَمْر</span>
-              <span className="text-[11px] font-black tracking-wider px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              <span className="text-lg sm:text-xl font-black text-[#23140E] whitespace-nowrap">جَمْر</span>
+              <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded-lg bg-gradient-to-l from-amber-100 to-orange-100 text-orange-700 border border-orange-200">
                 JAMR
               </span>
             </div>
-            <span className="text-[11px] text-orange-300/90 font-bold whitespace-nowrap hidden sm:block">
+            <span className="text-[11px] text-orange-600 font-extrabold whitespace-nowrap hidden sm:block">
               ولّع جمعتكم 🔥
             </span>
           </div>
@@ -78,12 +79,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center Zone: Active Match Indicator or Editable Name */}
         <div className="flex items-center justify-center min-w-0">
           {isInMatch ? (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-xs sm:text-sm font-black whitespace-nowrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs sm:text-sm font-black whitespace-nowrap shadow-sm">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>مباراة جارية 🔥</span>
             </div>
           ) : editingName ? (
-            <div className="flex items-center gap-1.5 bg-white/10 border border-orange-500/40 rounded-full px-3 py-1">
+            <div className="flex items-center gap-1.5 bg-white border-2 border-orange-400 rounded-full px-3 py-1 shadow-sm">
               <input
                 type="text"
                 maxLength={15}
@@ -91,11 +92,11 @@ export const Header: React.FC<HeaderProps> = ({
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && saveName()}
-                className="w-28 sm:w-36 bg-transparent text-white text-xs sm:text-sm font-bold focus:outline-none"
+                className="w-28 sm:w-36 bg-transparent text-[#23140E] text-xs sm:text-sm font-bold focus:outline-none"
               />
               <button
                 onClick={saveName}
-                className="p-1 rounded-full bg-emerald-500 text-slate-950 cursor-pointer"
+                className="p-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer"
                 title="حفظ"
               >
                 <Check className="w-3.5 h-3.5" />
@@ -108,11 +109,11 @@ export const Header: React.FC<HeaderProps> = ({
                 setEditingName(true);
                 SoundFX.playClick();
               }}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-xs sm:text-sm font-bold text-slate-200 whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-bold text-[#23140E] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
               title="تعديل الاسم"
             >
               <span className="truncate max-w-[120px] sm:max-w-[180px]">{playerName || 'لاعب جَمْر'}</span>
-              <Pencil className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <Pencil className="w-3.5 h-3.5 text-orange-500 shrink-0" />
             </button>
           )}
         </div>
@@ -125,7 +126,7 @@ export const Header: React.FC<HeaderProps> = ({
                 SoundFX.playClick();
                 onResetMatch();
               }}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-200 text-xs font-bold whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden md:inline">إعادة</span>
@@ -138,9 +139,9 @@ export const Header: React.FC<HeaderProps> = ({
                 SoundFX.playClick();
                 onGoHome();
               }}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-bold whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-[#23140E] text-xs font-extrabold whitespace-nowrap cursor-pointer shadow-xs transition-colors"
             >
-              <Home className="w-3.5 h-3.5 text-amber-400" />
+              <Home className="w-3.5 h-3.5 text-orange-500" />
               <span className="hidden sm:inline">الرئيسية</span>
             </button>
           )}
@@ -150,9 +151,9 @@ export const Header: React.FC<HeaderProps> = ({
               SoundFX.playClick();
               onOpenRules();
             }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-bold whitespace-nowrap cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-[#23140E] text-xs font-extrabold whitespace-nowrap cursor-pointer shadow-xs transition-colors"
           >
-            <BookOpen className="w-3.5 h-3.5 text-orange-400" />
+            <BookOpen className="w-3.5 h-3.5 text-orange-500" />
             <span className="hidden sm:inline">القواعد</span>
           </button>
 
@@ -161,11 +162,11 @@ export const Header: React.FC<HeaderProps> = ({
               const next = SoundFX.toggle();
               setSoundOn(next);
             }}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 cursor-pointer"
+            className="p-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-[#23140E] cursor-pointer shadow-xs transition-colors"
             title={soundOn ? 'كتم الصوت' : 'تفعيل الصوت'}
             aria-label="تبديل الصوت"
           >
-            {soundOn ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+            {soundOn ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
           </button>
 
           <button
@@ -173,12 +174,15 @@ export const Header: React.FC<HeaderProps> = ({
               SoundFX.playClick();
               onOpenAdmin();
             }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 text-xs font-bold whitespace-nowrap cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-gradient-to-l from-amber-100 to-orange-100 hover:from-amber-200 hover:to-orange-200 border border-orange-200 text-orange-900 text-xs font-black whitespace-nowrap cursor-pointer transition-colors"
           >
-            <Shield className="w-3.5 h-3.5" />
+            <Shield className="w-3.5 h-3.5 text-orange-600" />
             <span className="hidden md:inline">الإدارة</span>
           </button>
         </div>
+      </div>
+      <div className="border-t border-amber-100/80 bg-[#FFF8EC]/80">
+        <FestiveGarlandStrip />
       </div>
     </header>
   );
