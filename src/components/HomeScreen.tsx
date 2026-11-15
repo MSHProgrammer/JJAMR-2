@@ -19,14 +19,16 @@ import { SoundFX } from '../utils/soundFx';
 import { FestiveHeroArtwork } from './FestiveDecor';
 import { CharacterAvatar } from './CharacterAvatar';
 import { useCharacterReaction } from '../context/CharacterReactionContext';
-import { CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
+import { AVATAR_BG_PRESETS, CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
 
 interface HomeScreenProps {
   games: GameConfig[];
   playerName: string;
   playerAvatar: string;
+  playerAvatarBg: string;
   onUpdatePlayerName: (name: string) => void;
   onUpdatePlayerAvatar: (avatarId: string) => void;
+  onUpdatePlayerAvatarBg: (bg: string) => void;
   onSelectOfflineGame: (game: GameConfig) => void;
   onSelectOnlineCreate: (gameId?: string) => void;
   onSelectOnlineJoin: () => void;
@@ -37,8 +39,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   games,
   playerName,
   playerAvatar,
+  playerAvatarBg,
   onUpdatePlayerName,
   onUpdatePlayerAvatar,
+  onUpdatePlayerAvatarBg,
   onSelectOfflineGame,
   onSelectOnlineCreate,
   onSelectOnlineJoin,
@@ -111,17 +115,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 onClick={() => {
                   SoundFX.playTileSelect();
                   setShowAvatarDrawer((v) => !v);
-                  triggerReaction(
-                    'excited',
-                    avatarInfo.name.trim() ? `${avatarInfo.name.trim()} جاهز! ✨` : 'شخصيتك جاهزة! ✨',
-                    1800
-                  );
+                  triggerReaction('excited', 'شخصيتك جاهزة! ✨', 1800);
                 }}
-                title="اضغط لتغيير شخصيتك"
+                title="اضغط لتغيير شخصيتك وخلفية صورتك"
                 className="cursor-pointer shrink-0 focus:outline-none"
               >
                 <CharacterAvatar
                   avatarId={playerAvatar}
+                  backgroundColor={playerAvatarBg}
                   size={74}
                   mood={mood}
                   reactionKey={reactionKey}
@@ -185,13 +186,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 }}
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-extrabold text-orange-700 cursor-pointer shadow-xs transition-colors"
               >
-                <CharacterAvatar avatarId={playerAvatar} size={24} interactive={false} />
-                <span>{avatarInfo.name.trim() ? `شخصيتك: ${avatarInfo.name.trim()}` : 'تغيير شخصيتك'}</span>
+                <CharacterAvatar
+                  avatarId={playerAvatar}
+                  backgroundColor={playerAvatarBg}
+                  size={24}
+                  interactive={false}
+                />
+                <span>تغيير الشخصية والخلفية</span>
               </button>
 
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-3 py-2 rounded-xl bg-white/80 border border-amber-200 text-xs font-black text-orange-700">
-                  🎯 7 ألعاب جماعية
+                  🎯 {games.length} ألعاب جماعية
                 </span>
                 <span className="px-3 py-2 rounded-xl bg-white/80 border border-amber-200 text-xs font-black text-amber-700">
                   📚 1,200+ سؤال موثّق
@@ -203,39 +209,69 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
 
             {showAvatarDrawer && (
-              <div className="p-3.5 rounded-2xl bg-white/95 border-2 border-amber-300 shadow-lg grid grid-cols-5 sm:grid-cols-10 gap-2">
-                {CHARACTER_AVATARS.map((char) => {
-                  const cleanLabel = char.name.trim();
-                  return (
+              <div className="p-4 rounded-2xl bg-white/95 border-2 border-amber-300 shadow-lg space-y-3">
+                <div className="flex items-center justify-between text-xs font-black text-[#23140E]">
+                  <span>اختر شخصيتك الكرتونية (15 شخصية):</span>
+                  <span className="text-orange-600">{avatarInfo.tagline}</span>
+                </div>
+                <div className="grid grid-cols-5 sm:grid-cols-8 gap-2">
+                  {CHARACTER_AVATARS.map((char) => (
                     <button
                       key={char.id}
                       type="button"
                       onClick={() => {
                         SoundFX.playTileSelect();
                         onUpdatePlayerAvatar(char.id);
-                        setShowAvatarDrawer(false);
-                        triggerReaction(
-                          'excited',
-                          cleanLabel ? `تم اختيار ${cleanLabel}! 🎉` : 'تم اختيار شخصيتك! 🎉',
-                          2200
-                        );
+                        triggerReaction('excited', 'تم اختيار شخصيتك! 🎉', 2200);
                       }}
-                      title={cleanLabel || char.tagline}
-                      className={`flex flex-col items-center gap-1 p-1.5 rounded-xl cursor-pointer transition-all ${
+                      title={char.tagline}
+                      className={`flex items-center justify-center p-1.5 rounded-xl cursor-pointer transition-all ${
                         playerAvatar === char.id
                           ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
                           : 'hover:bg-[#FFF8EE]'
                       }`}
                     >
-                      <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
-                      {cleanLabel && (
-                        <span className="text-[10px] font-black text-[#23140E] truncate max-w-full">
-                          {cleanLabel}
-                        </span>
-                      )}
+                      <CharacterAvatar
+                        avatarId={char.id}
+                        backgroundColor={playerAvatarBg}
+                        size={42}
+                        interactive={false}
+                      />
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+                <div className="pt-2.5 border-t border-amber-100 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-[#5A3E32]">خلفية الصورة:</span>
+                  {AVATAR_BG_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        SoundFX.playClick();
+                        onUpdatePlayerAvatarBg(preset.id);
+                      }}
+                      title={preset.label}
+                      style={{ background: preset.background }}
+                      className={`w-7 h-7 rounded-full border-2 cursor-pointer transition-transform ${
+                        playerAvatarBg === preset.id
+                          ? 'border-[#23140E] scale-115 ring-2 ring-orange-400'
+                          : 'border-white shadow-xs hover:scale-110'
+                      }`}
+                    />
+                  ))}
+                  <label
+                    title="لون مخصص"
+                    className="w-7 h-7 rounded-full border-2 border-amber-300 bg-white flex items-center justify-center text-xs font-black cursor-pointer shadow-xs"
+                  >
+                    +
+                    <input
+                      type="color"
+                      value={playerAvatarBg.startsWith('#') ? playerAvatarBg : '#F97316'}
+                      onChange={(e) => onUpdatePlayerAvatarBg(e.target.value)}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
               </div>
             )}
           </div>

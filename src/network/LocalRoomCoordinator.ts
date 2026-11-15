@@ -16,6 +16,7 @@ import {
   areAllIsmFieldsFilled,
   computeIsmScores,
   createInitialBrokenTvState,
+  createInitialDetectiveState,
   createInitialIsmState,
   finalizeBarrahCategoryVote,
   generateRoomCode,
@@ -24,6 +25,8 @@ import {
   startMafiaOnlineRound,
 } from '../shared/roomEngine';
 import { DEFAULT_BARRAH_CATEGORIES } from '../data/barrahSalfaCategories';
+import { PUBLIC_DETECTIVE_CASES } from '../data/detectivePublicCases';
+import type { DetectivePlayerAccusation, DetectiveRoomPhase } from '../types/detective';
 
 type MessageListener = (payload: Record<string, unknown>) => void;
 
@@ -49,9 +52,11 @@ export class LocalRoomCoordinator {
     playerId: string;
     playerName: string;
     avatar: string;
+    avatarBg?: string;
     gameId: string;
     totalRounds?: number;
     isJudgeRoom?: boolean;
+    selectedCaseId?: string;
   }) {
     this.localPlayerId = params.playerId;
     const code = generateRoomCode();
@@ -61,6 +66,7 @@ export class LocalRoomCoordinator {
       id: params.playerId,
       name: params.playerName,
       avatar: params.avatar,
+      avatarBg: params.avatarBg,
       isHost: true,
       isReady: true,
       team: null,
@@ -80,6 +86,7 @@ export class LocalRoomCoordinator {
       createdAt: Date.now(),
       isJudgeRoom: Boolean(params.isJudgeRoom),
       totalRounds: params.totalRounds || 5,
+      selectedCaseId: params.selectedCaseId || PUBLIC_DETECTIVE_CASES[0].id,
     };
     room.messages = appendSystemChat(room, `أنشأ ${params.playerName} الغرفة بنجاح (وضع P2P المباشر).`);
     this.room = room;
@@ -93,6 +100,7 @@ export class LocalRoomCoordinator {
     playerId: string;
     playerName: string;
     avatar: string;
+    avatarBg?: string;
   }) {
     this.localPlayerId = params.playerId;
     const code = params.roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -118,6 +126,7 @@ export class LocalRoomCoordinator {
           playerId: params.playerId,
           playerName: params.playerName,
           avatar: params.avatar,
+          avatarBg: params.avatarBg,
         },
       });
     } catch {
@@ -137,6 +146,7 @@ export class LocalRoomCoordinator {
             playerId: params.playerId,
             playerName: params.playerName,
             avatar: params.avatar,
+            avatarBg: params.avatarBg,
           });
         });
         conn.on('data', (raw) => {
@@ -244,6 +254,7 @@ export class LocalRoomCoordinator {
                     connected: true,
                     name: String(action.playerName || p.name),
                     avatar: String(action.avatar || p.avatar),
+                    avatarBg: action.avatarBg ? String(action.avatarBg) : p.avatarBg,
                   }
                 : p
             ),
@@ -253,6 +264,7 @@ export class LocalRoomCoordinator {
             id: pid,
             name: String(action.playerName || 'لاعب'),
             avatar: String(action.avatar || 'char_01'),
+            avatarBg: action.avatarBg ? String(action.avatarBg) : undefined,
             isHost: false,
             isReady: false,
             team: null,
@@ -327,6 +339,7 @@ export class LocalRoomCoordinator {
                 senderId: sender.id,
                 senderName: sender.name,
                 senderAvatar: sender.avatar,
+                senderAvatarBg: sender.avatarBg,
                 text,
                 timestamp: Date.now(),
               },
@@ -343,6 +356,7 @@ export class LocalRoomCoordinator {
           ismHayawan: undefined,
           barrah: undefined,
           mafia: undefined,
+          detective: undefined,
         };
         break;
       }
@@ -363,6 +377,14 @@ export class LocalRoomCoordinator {
           room = startBarrahCategoryVote(room);
         } else if (room.gameId === 'mafia_no_hakam') {
           room = startMafiaOnlineRound(room);
+        } else if (room.gameId === 'smart_detective') {
+          const caseId = String(action.selectedCaseId || room.selectedCaseId || PUBLIC_DETECTIVE_CASES[0].id);
+          room = {
+            ...room,
+            status: 'playing',
+            selectedCaseId: caseId,
+            detective: createInitialDetectiveState(caseId),
+          };
         }
         break;
       }
@@ -823,6 +845,86 @@ export class LocalRoomCoordinator {
               },
             };
           }
+        }
+        break;
+      }
+      case 'detective_set_case': {
+        if (pid === room.hostId) {
+          const nextCaseId = String(action.caseId || PUBLIC_DETECTIVE_CASES[0].id);
+          room = {
+            ...room,
+            selectedCaseId: nextCaseId,
+            detective: room.detective ? createInitialDetectiveState(nextCaseId) : room.detective,
+          };
+        }
+        break;
+      }
+      case 'detective_update_progress': {
+        if (room.detective) {
+          room = {
+            ...room,
+            detective: {
+              ...room.detective,
+              progressByPlayer: {
+                ...room.detective.progressByPlayer,
+                [pid]: {
+                  cluesFoundCount: Number(action.cluesFoundCount || 0),
+                  suspectsReviewedCount: Number(action.suspectsReviewedCount || 0),
+                  hintsUsed: Number(action.hintsUsed || 0),
+                  readyForNext: Boolean(action.readyForNext),
+                },
+              },
+            },
+          };
+        }
+        break;
+      }
+      case 'detective_next_phase': {
+        if (room.detective && pid === room.hostId) {
+          const order: DetectiveRoomPhase[] = [
+            'briefing',
+            'exploration',
+            'investigation',
+            'discussion',
+            'accusation',
+            'case_closed',
+          ];
+          const currIdx = order.indexOf(room.detective.phase);
+          const nextPhase = order[Math.min(order.length - 1, currIdx + 1)];
+          room = {
+            ...room,
+            detective: {
+              ...room.detective,
+              phase: nextPhase,
+              phaseDeadline: null,
+            },
+          };
+        }
+        break;
+      }
+      case 'detective_submit_accusation': {
+        if (room.detective) {
+          const suspectId = String(action.suspectId || '');
+          const reason = String(action.reason || '');
+          const submittedAccuserIds = room.detective.submittedAccuserIds.includes(pid)
+            ? room.detective.submittedAccuserIds
+            : [...room.detective.submittedAccuserIds, pid];
+          const acc: DetectivePlayerAccusation = {
+            suspectId,
+            reason,
+            submittedAt: Date.now(),
+          };
+          room = {
+            ...room,
+            detective: {
+              ...room.detective,
+              submittedAccuserIds,
+              accusationsByPlayer: {
+                ...(room.detective.accusationsByPlayer || {}),
+                [pid]: acc,
+              },
+            },
+          };
         }
         break;
       }

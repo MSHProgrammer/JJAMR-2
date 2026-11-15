@@ -19,7 +19,16 @@ import { BrokenTvEngine } from './games/BrokenTvEngine';
 import { IsmHayawanEngine } from './games/IsmHayawanEngine';
 import { BarrahSalfaEngine } from './games/BarrahSalfaEngine';
 import { MafiaNoHakamEngine } from './games/MafiaNoHakamEngine';
-import { CHARACTER_AVATARS, DEFAULT_AVATAR_ID, sanitizeAvatarId } from '../data/characterAvatars';
+import { SmartDetectiveEngine } from './games/SmartDetectiveEngine';
+import {
+  AVATAR_BG_PRESETS,
+  CHARACTER_AVATARS,
+  DEFAULT_AVATAR_BG,
+  DEFAULT_AVATAR_ID,
+  sanitizeAvatarBg,
+  sanitizeAvatarId,
+} from '../data/characterAvatars';
+import { PUBLIC_DETECTIVE_CASES } from '../data/detectivePublicCases';
 import { CharacterAvatar } from './CharacterAvatar';
 import { useCharacterReaction } from '../context/CharacterReactionContext';
 
@@ -29,7 +38,9 @@ interface OnlineGameViewProps {
   initialRoomCode?: string;
   playerName: string;
   playerAvatar?: string;
+  playerAvatarBg?: string;
   onUpdatePlayerAvatar?: (avatarId: string) => void;
+  onUpdatePlayerAvatarBg?: (bg: string) => void;
   games: GameConfig[];
   barrahCategories: BarrahCategory[];
   onMatchStateChange?: (active: boolean) => void;
@@ -44,7 +55,9 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   initialRoomCode,
   playerName,
   playerAvatar,
+  playerAvatarBg,
   onUpdatePlayerAvatar,
+  onUpdatePlayerAvatarBg,
   games,
   barrahCategories,
   onMatchStateChange,
@@ -63,10 +76,21 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       return DEFAULT_AVATAR_ID;
     }
   });
+  const [avatarBg, setAvatarBg] = useState(() => {
+    if (playerAvatarBg) return sanitizeAvatarBg(playerAvatarBg);
+    try {
+      return sanitizeAvatarBg(window.localStorage.getItem('jamr_player_avatar_bg'));
+    } catch {
+      return DEFAULT_AVATAR_BG;
+    }
+  });
   const [selectedGameId, setSelectedGameId] = useState<string>(
     initialGameId && onlineGames.some((g) => g.id === initialGameId)
       ? initialGameId
       : onlineGames[0]?.id || 'broken_tv'
+  );
+  const [selectedDetectiveCaseId, setSelectedDetectiveCaseId] = useState<string>(
+    PUBLIC_DETECTIVE_CASES[0].id
   );
   const [joinCode, setJoinCode] = useState((initialRoomCode || '').toUpperCase());
 
@@ -141,6 +165,12 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     }
   }, [playerAvatar]);
 
+  useEffect(() => {
+    if (playerAvatarBg) {
+      setAvatarBg(sanitizeAvatarBg(playerAvatarBg));
+    }
+  }, [playerAvatarBg]);
+
   // Auto-join when user opens an invite link (?room=CODE) and has a name ready
   useEffect(() => {
     const cleanCode = (initialRoomCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -155,8 +185,9 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       roomCode: cleanCode,
       playerName: cleanName,
       avatar,
+      avatarBg,
     });
-  }, [initialRoomCode, playerName, avatar, room]);
+  }, [initialRoomCode, playerName, avatar, avatarBg, room]);
 
   const isHost = room ? room.hostId === localPlayerId : false;
 
@@ -167,6 +198,17 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     triggerReaction('excited', 'شخصية رهيبة! ✨', 1800);
     try {
       window.localStorage.setItem('jamr_player_avatar', clean);
+    } catch {
+      // ignore
+    }
+  };
+
+  const saveAvatarBg = (bg: string) => {
+    const clean = sanitizeAvatarBg(bg);
+    setAvatarBg(clean);
+    onUpdatePlayerAvatarBg?.(clean);
+    try {
+      window.localStorage.setItem('jamr_player_avatar_bg', clean);
     } catch {
       // ignore
     }
@@ -187,9 +229,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     await clientRef.current?.createRoom({
       playerName: cleanName,
       avatar,
+      avatarBg,
       gameId: selectedGameId,
       totalRounds: ismRounds,
       isJudgeRoom: selectedGameId === 'ism_hayawan' ? isJudgeRoom : false,
+      selectedCaseId: selectedGameId === 'smart_detective' ? selectedDetectiveCaseId : undefined,
     });
     setIsBusy(false);
   };
@@ -210,6 +254,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       roomCode: cleanCode,
       playerName: cleanName,
       avatar,
+      avatarBg,
     });
     setIsBusy(false);
   };
@@ -320,6 +365,19 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             onExit={exitMatch}
           />
         )}
+        {room.gameId === 'smart_detective' && room.detective && (
+          <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4">
+            <SmartDetectiveEngine
+              mode="online"
+              onBack={exitMatch}
+              onlineState={room.detective}
+              players={room.players}
+              currentPlayerId={localPlayerId}
+              isHost={room.hostId === localPlayerId}
+              onOnlineAction={(action, payload) => sendAction({ type: action, ...(payload || {}) })}
+            />
+          </div>
+        )}
 
         {/* Floating Live Chat Drawer */}
         <button
@@ -347,7 +405,12 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                   {m.isSystem ? (
                     <span className="shrink-0">🔥</span>
                   ) : (
-                    <CharacterAvatar avatarId={m.senderAvatar} size={24} interactive={false} />
+                    <CharacterAvatar
+                      avatarId={m.senderAvatar}
+                      backgroundColor={m.senderAvatarBg}
+                      size={24}
+                      interactive={false}
+                    />
                   )}
                   <div className="min-w-0">
                     <span className="font-black">{m.senderName}: </span>
@@ -381,7 +444,12 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   // LOBBY STATE (Inside a Room)
   if (room) {
     const currentGame = games.find((g) => g.id === room.gameId);
-    const minNeeded = room.gameId === 'broken_tv' || room.gameId === 'barrah_salfa' || room.gameId === 'mafia_no_hakam' ? 3 : 2;
+    const minNeeded =
+      room.gameId === 'smart_detective'
+        ? 1
+        : room.gameId === 'broken_tv' || room.gameId === 'barrah_salfa' || room.gameId === 'mafia_no_hakam'
+          ? 3
+          : 2;
     const activePlayersCount = room.players.filter((p) => !p.isJudge).length;
 
     return (
@@ -476,6 +544,26 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                     </select>
                   </div>
                 )}
+
+                {room.gameId === 'smart_detective' && (
+                  <div>
+                    <label className="block text-xs font-black text-[#7A1219] mb-1.5">ملف القضية المختار:</label>
+                    <select
+                      value={room.selectedCaseId || selectedDetectiveCaseId}
+                      onChange={(e) => {
+                        setSelectedDetectiveCaseId(e.target.value);
+                        clientRef.current?.send({ type: 'detective_set_case', caseId: e.target.value });
+                      }}
+                      className="w-full rounded-xl bg-white border border-amber-200 px-3 py-2 text-xs font-bold text-[#23140E]"
+                    >
+                      {PUBLIC_DETECTIVE_CASES.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.caseNumber} — {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
@@ -498,6 +586,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                     <div className="flex items-center gap-2.5 min-w-0">
                       <CharacterAvatar
                         avatarId={p.avatar}
+                        backgroundColor={p.avatarBg}
                         size={38}
                         mood={p.id === localPlayerId ? 'excited' : 'idle'}
                         interactive={false}
@@ -537,6 +626,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                     type: 'start_game',
                     paceSeconds: brokenTvPace,
                     totalRounds: ismRounds,
+                    selectedCaseId: room.selectedCaseId || selectedDetectiveCaseId,
                   });
                 }}
                 className="w-full py-4 rounded-2xl bg-gradient-to-l from-orange-500 via-red-500 to-amber-500 disabled:opacity-45 text-white font-black text-lg flex items-center justify-center gap-2 cursor-pointer shadow-md"
@@ -571,7 +661,12 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                   {m.isSystem ? (
                     <span className="text-base shrink-0">🔥</span>
                   ) : (
-                    <CharacterAvatar avatarId={m.senderAvatar} size={28} interactive={false} />
+                    <CharacterAvatar
+                      avatarId={m.senderAvatar}
+                      backgroundColor={m.senderAvatarBg}
+                      size={28}
+                      interactive={false}
+                    />
                   )}
                   <div className="min-w-0">
                     <span className="font-black text-[#23140E]">{m.senderName}: </span>
@@ -648,8 +743,8 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-[#5A3E32] mb-1.5">اختر شخصيتك الكرتونية</label>
-            <div className="grid grid-cols-5 gap-2">
+            <label className="block text-xs font-bold text-[#5A3E32] mb-1.5">اختر شخصيتك الكرتونية ({CHARACTER_AVATARS.length})</label>
+            <div className="grid grid-cols-5 gap-2 max-h-48 overflow-y-auto p-1">
               {CHARACTER_AVATARS.map((char) => {
                 const active = avatar === char.id;
                 const cleanLabel = char.name.trim();
@@ -670,6 +765,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                   >
                     <CharacterAvatar
                       avatarId={char.id}
+                      backgroundColor={avatarBg}
                       size={36}
                       mood={active ? 'excited' : 'idle'}
                       interactive={false}
@@ -682,6 +778,31 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                   </button>
                 );
               })}
+            </div>
+            <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-bold text-[#5A3E32]">خلفية الصورة:</span>
+              {AVATAR_BG_PRESETS.map((bg) => (
+                <button
+                  key={bg.id}
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    saveAvatarBg(bg.id);
+                  }}
+                  title={bg.label}
+                  style={{ background: bg.background }}
+                  className={`w-6 h-6 rounded-full border-2 cursor-pointer transition ${
+                    avatarBg === bg.id ? 'border-[#23140E] scale-110 shadow' : 'border-white shadow-xs'
+                  }`}
+                />
+              ))}
+              <input
+                type="color"
+                value={avatarBg.startsWith('#') ? avatarBg : '#8B5CF6'}
+                onChange={(e) => saveAvatarBg(e.target.value)}
+                title="اختر لون خلفية مخصص"
+                className="w-6 h-6 rounded-full overflow-hidden border border-amber-300 cursor-pointer"
+              />
             </div>
           </div>
         </div>
@@ -770,6 +891,25 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                   </span>
                   <span>{isJudgeRoom ? 'نعم ✅' : 'لا'}</span>
                 </button>
+              </div>
+            )}
+
+            {selectedGameId === 'smart_detective' && (
+              <div className="rounded-2xl bg-[#131217] border border-[#C89B3C]/40 p-4 space-y-2 text-[#F3EFE6]">
+                <label className="block text-xs font-black text-[#E5C16C]">
+                  🔍 اختر القضية الأولية للغرفة:
+                </label>
+                <select
+                  value={selectedDetectiveCaseId}
+                  onChange={(e) => setSelectedDetectiveCaseId(e.target.value)}
+                  className="w-full rounded-xl bg-[#09080A] border border-[#C89B3C]/35 px-3 py-2.5 text-xs font-bold text-[#F3EFE6]"
+                >
+                  {PUBLIC_DETECTIVE_CASES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.caseNumber} — {c.title} ({c.categoryLabel})
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

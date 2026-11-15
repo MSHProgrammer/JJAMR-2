@@ -149,8 +149,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       }
       throw new Error('انتهت جلسة الإدارة، يرجى تسجيل الدخول مجدداً');
     }
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error || 'حدث خطأ في الخادم');
+    const raw = await res.text();
+    let json: Record<string, any> = {};
+    try {
+      json = raw ? (JSON.parse(raw) as Record<string, any>) : {};
+    } catch {
+      json = {};
+    }
+    if (!res.ok) throw new Error(String(json?.error || `حدث خطأ في الخادم (${res.status})`));
     return json;
   };
 
@@ -163,6 +169,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       ]);
       setStore(dataJson as DataStoreSnapshot);
       setStats(statsJson as LiveStats);
+      setAuthError('');
       if (!qTopicId && dataJson.topics?.[0]?.id) {
         setQTopicId(dataJson.topics[0].id);
       }
@@ -175,8 +182,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
     void loadAdminData();
   }, [token]);
 
+  useEffect(() => {
+    if (token && (tab === 'reports' || tab === 'rooms')) {
+      void loadAdminData();
+    }
+  }, [tab, token]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!password.trim()) {
+      setAuthError('يرجى إدخال رمز المرور الإداري.');
+      return;
+    }
     setLoggingIn(true);
     setAuthError('');
     try {
@@ -185,8 +202,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'تعذّر تسجيل الدخول');
+      const raw = await res.text();
+      let json: { token?: string; error?: string } = {};
+      try {
+        json = raw ? (JSON.parse(raw) as { token?: string; error?: string }) : {};
+      } catch {
+        json = {};
+      }
+      if (!res.ok || !json.token) {
+        throw new Error(json?.error || `تعذّر تسجيل الدخول (${res.status})`);
+      }
       SoundFX.playCorrect();
       setToken(json.token);
       setPassword('');
@@ -212,19 +237,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               <Shield className="w-6 h-6 text-orange-500" />
               <h1 className="text-xl font-black text-[#23140E]">دخول إدارة جَمْر</h1>
             </div>
-            <button onClick={onExit} className="text-xs font-bold text-[#7C5D4F] hover:text-[#23140E] cursor-pointer">
+            <button type="button" onClick={onExit} className="text-xs font-bold text-[#7C5D4F] hover:text-[#23140E] cursor-pointer">
               رجوع
             </button>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} noValidate className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-[#5A3E32] mb-2">رمز المرور الإداري</label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-[#9A7B6D] absolute right-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
-                  required
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
@@ -234,7 +258,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                   className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 pr-10 pl-4 py-3 text-[#23140E] text-sm focus:outline-none focus:border-orange-500"
                 />
               </div>
-              {authError && <p className="text-xs text-rose-600 font-bold mt-2">{authError}</p>}
+              <p className="text-[11px] text-[#7C5D4F] font-readex mt-2">
+                إذا لم تُضبط قيمة <code className="font-mono text-orange-700">ADMIN_PASSWORD</code> في البيئة، الرمز الافتراضي هو:{' '}
+                <button
+                  type="button"
+                  onClick={() => setPassword('jamr2026')}
+                  className="font-mono font-black text-orange-700 underline cursor-pointer"
+                >
+                  jamr2026
+                </button>
+              </p>
+              {authError && (
+                <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 font-bold mt-2">
+                  {authError}
+                </p>
+              )}
             </div>
 
             <button

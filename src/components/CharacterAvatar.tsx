@@ -1,10 +1,11 @@
 import React from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { resolveCharacterAvatar } from '../data/characterAvatars';
+import { resolveAvatarBgCss, resolveCharacterAvatar } from '../data/characterAvatars';
 import { CharacterMood } from '../context/CharacterReactionContext';
 
 interface CharacterAvatarProps {
   avatarId?: string | null;
+  backgroundColor?: string | null;
   size?: number;
   mood?: CharacterMood;
   reactionKey?: number;
@@ -16,6 +17,7 @@ interface CharacterAvatarProps {
 
 export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
   avatarId,
+  backgroundColor,
   size = 44,
   mood = 'idle',
   reactionKey = 0,
@@ -26,6 +28,7 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
 }) => {
   const shouldReduceMotion = useReducedMotion();
   const info = resolveCharacterAvatar(avatarId);
+  const bgCss = resolveAvatarBgCss(backgroundColor);
 
   const getMotionAnimation = () => {
     if (shouldReduceMotion) {
@@ -179,11 +182,12 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
         transition={anim.transition}
         whileHover={interactive && !shouldReduceMotion ? { scale: 1.12, rotate: -4 } : undefined}
         whileTap={interactive && !shouldReduceMotion ? { scale: 0.94 } : undefined}
-        className={`w-full h-full rounded-full overflow-hidden bg-white ${ringClass}`}
+        style={{ background: bgCss }}
+        className={`w-full h-full rounded-full overflow-hidden ${ringClass}`}
       >
         <img
           src={info.imageUrl}
-          alt={info.name}
+          alt={info.tagline}
           draggable={false}
           className="w-full h-full object-cover"
         />

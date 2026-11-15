@@ -15,6 +15,8 @@ import { ARABIC_LETTERS } from '../data/huroofBank.ts';
 import { DEFAULT_BARRAH_CATEGORIES } from '../data/barrahSalfaCategories.ts';
 import { checkArabicSaudiDictionary } from '../data/arabicSaudiDictionary.ts';
 import { normalizeArabic, wordStartsWithLetter } from '../utils/arabicNormalize.ts';
+import { PUBLIC_DETECTIVE_CASES } from '../data/detectivePublicCases.ts';
+import type { DetectiveOnlineState } from '../types/detective.ts';
 
 export function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -157,6 +159,7 @@ export function startBarrahCategoryVote(room: RoomState): RoomState {
       categoryId: '',
       categoryName: '',
       categoryVotesByVoter: {},
+      categoryVoteDeadline: Date.now() + 10_000,
       secretWord: '',
       distractorWords: [],
       spyId: '',
@@ -451,6 +454,21 @@ export function pickUnusedArabicLetter(used: string[]): string {
   const remaining = ARABIC_LETTERS.filter((l) => !used.includes(l));
   const pool = remaining.length > 0 ? remaining : ARABIC_LETTERS;
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+export function createInitialDetectiveState(caseId?: string): DetectiveOnlineState {
+  const validCase =
+    PUBLIC_DETECTIVE_CASES.find((c) => c.id === caseId) || PUBLIC_DETECTIVE_CASES[0];
+  return {
+    caseId: validCase.id,
+    phase: 'briefing',
+    phaseDeadline: null,
+    progressByPlayer: {},
+    submittedAccuserIds: [],
+    accusationsByPlayer: {},
+    revealedSolution: null,
+    resultsByPlayer: [],
+  };
 }
 
 export type { IsmPlayerAnswers };

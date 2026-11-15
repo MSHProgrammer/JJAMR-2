@@ -39,6 +39,7 @@ export class JamrSocketClient {
   private currentRoomCode: string | null = null;
   private lastKnownName = '';
   private lastKnownAvatar = 'char_01';
+  private lastKnownAvatarBg = 'lavender';
   private playerId: string;
   private categories: BarrahCategory[] = [];
 
@@ -139,6 +140,7 @@ export class JamrSocketClient {
               existingPlayerId: this.playerId,
               playerName: this.lastKnownName || 'لاعب',
               avatar: this.lastKnownAvatar || 'char_01',
+              avatarBg: this.lastKnownAvatarBg || 'lavender',
             });
           } else {
             // Silently check if there was a saved room in sessionStorage
@@ -146,8 +148,9 @@ export class JamrSocketClient {
               const savedRoom = window.sessionStorage.getItem('jamr_active_room');
               const savedName = window.localStorage.getItem('jamr_player_name');
               const savedAvatar = window.localStorage.getItem('jamr_player_avatar') || 'char_01';
+              const savedAvatarBg = window.localStorage.getItem('jamr_player_avatar_bg') || 'lavender';
               if (savedRoom && savedName) {
-                void this.trySilentRestoreRoom(savedRoom, savedName, savedAvatar);
+                void this.trySilentRestoreRoom(savedRoom, savedName, savedAvatar, savedAvatarBg);
               }
             } catch {
               // ignore
@@ -194,7 +197,7 @@ export class JamrSocketClient {
     return this.connectPromise;
   }
 
-  private async trySilentRestoreRoom(roomCode: string, playerName: string, avatar: string) {
+  private async trySilentRestoreRoom(roomCode: string, playerName: string, avatar: string, avatarBg?: string) {
     try {
       const checkRes = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}`, { cache: 'no-store' });
       if (!checkRes.ok) {
@@ -203,7 +206,7 @@ export class JamrSocketClient {
       }
       const data = await checkRes.json();
       if (data?.ok && data.room) {
-        await this.joinRoom({ roomCode, playerName, avatar, silentNotFound: true });
+        await this.joinRoom({ roomCode, playerName, avatar, avatarBg, silentNotFound: true });
       } else {
         this.clearSavedRoom();
       }
@@ -251,6 +254,7 @@ export class JamrSocketClient {
         existingPlayerId: this.playerId,
         playerName: this.lastKnownName || 'لاعب',
         avatar: this.lastKnownAvatar || 'char_01',
+        avatarBg: this.lastKnownAvatarBg || 'lavender',
       });
     } else {
       this.startFallbackPoll();
@@ -350,12 +354,15 @@ export class JamrSocketClient {
   public async createRoom(params: {
     playerName: string;
     avatar: string;
+    avatarBg?: string;
     gameId: string;
     totalRounds?: number;
     isJudgeRoom?: boolean;
+    selectedCaseId?: string;
   }) {
     this.lastKnownName = params.playerName;
     this.lastKnownAvatar = params.avatar;
+    this.lastKnownAvatarBg = params.avatarBg || 'lavender';
 
     if (this.shouldForceP2P()) {
       this.activateP2P();
@@ -402,15 +409,23 @@ export class JamrSocketClient {
     roomCode: string;
     playerName: string;
     avatar: string;
+    avatarBg?: string;
     silentNotFound?: boolean;
   }) {
     const cleanCode = params.roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     this.lastKnownName = params.playerName;
     this.lastKnownAvatar = params.avatar;
+    this.lastKnownAvatarBg = params.avatarBg || 'lavender';
 
     if (this.shouldForceP2P()) {
       this.activateP2P();
-      this.p2p?.joinRoom({ roomCode: cleanCode, playerName: params.playerName, avatar: params.avatar, playerId: this.playerId });
+      this.p2p?.joinRoom({
+        roomCode: cleanCode,
+        playerName: params.playerName,
+        avatar: params.avatar,
+        avatarBg: params.avatarBg,
+        playerId: this.playerId,
+      });
       return;
     }
 
@@ -423,6 +438,7 @@ export class JamrSocketClient {
           existingPlayerId: this.playerId,
           playerName: params.playerName,
           avatar: params.avatar,
+          avatarBg: params.avatarBg,
         }),
       });
 
@@ -450,6 +466,7 @@ export class JamrSocketClient {
         existingPlayerId: this.playerId,
         playerName: params.playerName,
         avatar: params.avatar,
+        avatarBg: params.avatarBg,
       })
     ) {
       return;
@@ -461,6 +478,7 @@ export class JamrSocketClient {
       roomCode: cleanCode,
       playerName: params.playerName,
       avatar: params.avatar,
+      avatarBg: params.avatarBg,
       playerId: this.playerId,
     });
   }

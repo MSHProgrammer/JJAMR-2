@@ -14,13 +14,15 @@ import { SoundFX } from '../utils/soundFx';
 import { JamrFlameLogo, FestiveGarlandStrip } from './FestiveDecor';
 import { CharacterAvatar } from './CharacterAvatar';
 import { useCharacterReaction } from '../context/CharacterReactionContext';
-import { CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
+import { AVATAR_BG_PRESETS, CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
 
 interface HeaderProps {
   playerName: string;
   playerAvatar: string;
+  playerAvatarBg: string;
   onUpdatePlayerName: (name: string) => void;
   onUpdatePlayerAvatar: (avatarId: string) => void;
+  onUpdatePlayerAvatarBg: (bg: string) => void;
   isInMatch: boolean;
   isHome: boolean;
   onGoHome: () => void;
@@ -32,8 +34,10 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   playerName,
   playerAvatar,
+  playerAvatarBg,
   onUpdatePlayerName,
   onUpdatePlayerAvatar,
+  onUpdatePlayerAvatarBg,
   isInMatch,
   isHome,
   onGoHome,
@@ -97,15 +101,12 @@ export const Header: React.FC<HeaderProps> = ({
               SoundFX.playClick();
               setShowAvatarMenu((s) => !s);
             }}
-            title={
-              avatarInfo.name.trim()
-                ? `شخصيتك: ${avatarInfo.name.trim()} — اضغط للتغيير`
-                : `شخصيتك (${avatarInfo.tagline}) — اضغط للتغيير`
-            }
+            title={`شخصيتك (${avatarInfo.tagline}) — اضغط للتغيير`}
             className="cursor-pointer rounded-full focus:outline-none"
           >
             <CharacterAvatar
               avatarId={playerAvatar}
+              backgroundColor={playerAvatarBg}
               size={40}
               mood={mood}
               reactionKey={reactionKey}
@@ -154,51 +155,77 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Quick Character Switcher Popover */}
+          {/* Quick Character & Background Switcher Popover */}
           {showAvatarMenu && (
             <>
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setShowAvatarMenu(false)}
               />
-              <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 w-72 rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-3.5 space-y-2.5">
+              <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 w-80 max-w-[92vw] rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-3.5 space-y-3">
                 <div className="flex items-center justify-between text-xs font-black text-[#23140E]">
                   <span>اختر شخصيتك 🎨</span>
-                  <span className="text-orange-600">{avatarInfo.name.trim() || avatarInfo.tagline}</span>
+                  <span className="text-orange-600">{avatarInfo.tagline}</span>
                 </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {CHARACTER_AVATARS.map((char) => {
-                    const cleanLabel = char.name.trim();
-                    return (
+                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto">
+                  {CHARACTER_AVATARS.map((char) => (
+                    <button
+                      key={char.id}
+                      type="button"
+                      onClick={() => {
+                        SoundFX.playTileSelect();
+                        onUpdatePlayerAvatar(char.id);
+                        triggerReaction('excited', `${char.tagline}! 🔥`, 2000);
+                      }}
+                      title={char.tagline}
+                      className={`p-1 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                        playerAvatar === char.id
+                          ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                          : 'hover:bg-[#FFF8EE]'
+                      }`}
+                    >
+                      <CharacterAvatar
+                        avatarId={char.id}
+                        backgroundColor={playerAvatarBg}
+                        size={40}
+                        interactive={false}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <div className="pt-2 border-t border-amber-100 space-y-1.5">
+                  <div className="text-[11px] font-extrabold text-[#5A3E32]">خلفية الصورة:</div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {AVATAR_BG_PRESETS.map((preset) => (
                       <button
-                        key={char.id}
+                        key={preset.id}
                         type="button"
                         onClick={() => {
-                          SoundFX.playTileSelect();
-                          onUpdatePlayerAvatar(char.id);
-                          setShowAvatarMenu(false);
-                          triggerReaction(
-                            'excited',
-                            cleanLabel ? `أهلاً أنا ${cleanLabel}! 🔥` : `${char.tagline}! 🔥`,
-                            2000
-                          );
+                          SoundFX.playClick();
+                          onUpdatePlayerAvatarBg(preset.id);
                         }}
-                        title={cleanLabel || char.tagline}
-                        className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
-                          playerAvatar === char.id
-                            ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
-                            : 'hover:bg-[#FFF8EE]'
+                        title={preset.label}
+                        style={{ background: preset.background }}
+                        className={`w-6 h-6 rounded-full border-2 cursor-pointer transition-transform ${
+                          playerAvatarBg === preset.id
+                            ? 'border-[#23140E] scale-115 ring-2 ring-orange-400'
+                            : 'border-white shadow-xs hover:scale-110'
                         }`}
-                      >
-                        <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
-                        {cleanLabel && (
-                          <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
-                            {cleanLabel}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                      />
+                    ))}
+                    <label
+                      title="لون مخصص"
+                      className="w-6 h-6 rounded-full border-2 border-amber-300 bg-white flex items-center justify-center text-[10px] font-black cursor-pointer"
+                    >
+                      +
+                      <input
+                        type="color"
+                        value={playerAvatarBg.startsWith('#') ? playerAvatarBg : '#F97316'}
+                        onChange={(e) => onUpdatePlayerAvatarBg(e.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
             </>

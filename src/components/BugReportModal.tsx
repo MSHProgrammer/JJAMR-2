@@ -25,8 +25,9 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (description.trim().length < 4) {
-      setError('يرجى كتابة تفاصيل واضحة للمشكلة أو الاقتراح.');
+    const trimmed = description.trim();
+    if (trimmed.length < 2) {
+      setError('يرجى كتابة وصف واضح للبلاغ (حرفان على الأقل).');
       return;
     }
     setSubmitting(true);
@@ -40,33 +41,46 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
           type,
           gameId,
           gameTitle: selectedGame ? selectedGame.title : 'المنصة العامة',
-          description: description.trim(),
+          description: trimmed,
           reporterName: reporterName.trim() || 'لاعب',
           contact: contact.trim(),
         }),
       });
-      const json = await res.json();
+      const rawText = await res.text();
+      let json: { error?: string; ok?: boolean } = {};
+      try {
+        json = rawText ? (JSON.parse(rawText) as { error?: string; ok?: boolean }) : {};
+      } catch {
+        json = {};
+      }
       if (!res.ok) {
-        throw new Error(json?.error || 'تعذّر إرسال البلاغ');
+        throw new Error(json?.error || `تعذّر إرسال البلاغ (${res.status})`);
       }
       SoundFX.playCorrect();
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'حدث خطأ أثناء الإرسال');
+      SoundFX.playWrong();
+      setError(err instanceof Error ? err.message : 'حدث خطأ أثناء الاتصال بالخادم، حاول مجدداً.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#23140E]/45 backdrop-blur-md p-4">
-      <div className="w-full max-w-lg rounded-3xl bg-white border-2 border-amber-300 shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-[#23140E]/55 backdrop-blur-md p-4 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-lg rounded-3xl bg-white border-2 border-amber-300 shadow-2xl overflow-hidden my-auto max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-amber-200 bg-[#FFF8EE]">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-orange-500" />
             <h2 className="text-lg font-black text-[#23140E]">الإبلاغ عن خلل أو مشكلة</h2>
           </div>
           <button
+            type="button"
             onClick={() => {
               SoundFX.playClick();
               onClose();
@@ -82,11 +96,12 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
             <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-9 h-9" />
             </div>
-            <h3 className="text-xl font-black text-[#23140E]">تم استلام بلاغك بنجاح!</h3>
+            <h3 className="text-xl font-black text-[#23140E]">تم استلام بلاغك بنجاح! ✅</h3>
             <p className="text-sm text-[#5A3E32] font-readex">
-              شكراً لمساهمتك في تحسين منصة جَمْر. سيراجع الفريق بلاغك في أقرب وقت.
+              وصل بلاغك إلى لوحة الإدارة مباشرةً. شكراً لمساهمتك في تطوير منصة جَمْر!
             </p>
             <button
+              type="button"
               onClick={onClose}
               className="px-6 py-2.5 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white font-black text-sm cursor-pointer shadow-sm"
             >
@@ -94,7 +109,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">نوع البلاغ</label>
@@ -130,7 +145,6 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
               <label className="block text-xs font-extrabold text-[#5A3E32] mb-1.5">وصف المشكلة أو الملاحظة</label>
               <textarea
                 rows={4}
-                required
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value);
@@ -164,12 +178,16 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
               </div>
             </div>
 
-            {error && <p className="text-xs text-rose-600 font-bold">{error}</p>}
+            {error && (
+              <div className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-700 font-bold">
+                {error}
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white font-black py-3 px-6 text-sm shadow-md cursor-pointer disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-white font-black py-3.5 px-6 text-sm shadow-md cursor-pointer disabled:opacity-60"
             >
               <Send className="w-4 h-4" />
               <span>{submitting ? 'جاري الإرسال...' : 'إرسال البلاغ للإدارة'}</span>

@@ -20,7 +20,12 @@ import { OfflineGameRunner } from './components/OfflineGameRunner';
 import { OnlineGameView } from './components/OnlineGameView';
 import { AdminPanel } from './components/AdminPanel';
 import { CharacterReactionProvider } from './context/CharacterReactionContext';
-import { DEFAULT_AVATAR_ID, sanitizeAvatarId } from './data/characterAvatars';
+import {
+  DEFAULT_AVATAR_BG,
+  DEFAULT_AVATAR_ID,
+  sanitizeAvatarBg,
+  sanitizeAvatarId,
+} from './data/characterAvatars';
 
 type ViewMode =
   | { kind: 'home' }
@@ -42,6 +47,14 @@ export default function App() {
       return sanitizeAvatarId(window.localStorage.getItem('jamr_player_avatar'));
     } catch {
       return DEFAULT_AVATAR_ID;
+    }
+  });
+
+  const [playerAvatarBg, setPlayerAvatarBg] = useState<string>(() => {
+    try {
+      return sanitizeAvatarBg(window.localStorage.getItem('jamr_player_avatar_bg'));
+    } catch {
+      return DEFAULT_AVATAR_BG;
     }
   });
 
@@ -124,6 +137,16 @@ export default function App() {
     }
   };
 
+  const handleSaveAvatarBg = (bg: string) => {
+    const clean = sanitizeAvatarBg(bg);
+    setPlayerAvatarBg(clean);
+    try {
+      window.localStorage.setItem('jamr_player_avatar_bg', clean);
+    } catch {
+      // ignore
+    }
+  };
+
   const openOfflineGame = (game: GameConfig) => {
     if (game.underMaintenance || !game.isActive) {
       setMaintenanceGame(game);
@@ -149,8 +172,10 @@ export default function App() {
         <Header
           playerName={playerName}
           playerAvatar={playerAvatar}
+          playerAvatarBg={playerAvatarBg}
           onUpdatePlayerName={handleSaveName}
           onUpdatePlayerAvatar={handleSaveAvatar}
+          onUpdatePlayerAvatarBg={handleSaveAvatarBg}
           isInMatch={isInMatch}
           isHome={view.kind === 'home'}
           onGoHome={() => {
@@ -168,8 +193,10 @@ export default function App() {
               games={games}
               playerName={playerName || 'لاعب جَمْر'}
               playerAvatar={playerAvatar}
+              playerAvatarBg={playerAvatarBg}
               onUpdatePlayerName={handleSaveName}
               onUpdatePlayerAvatar={handleSaveAvatar}
+              onUpdatePlayerAvatarBg={handleSaveAvatarBg}
               onSelectOfflineGame={openOfflineGame}
               onSelectOnlineCreate={(gameId) =>
                 setView({ kind: 'online', tab: 'create', gameId, matchKey: Date.now() })
@@ -187,6 +214,7 @@ export default function App() {
               game={view.game}
               playerName={playerName || 'لاعب جَمْر'}
               playerAvatar={playerAvatar}
+              playerAvatarBg={playerAvatarBg}
               sections={sections}
               topics={topics}
               questions={questions}
@@ -220,7 +248,9 @@ export default function App() {
               initialRoomCode={view.roomCode}
               playerName={playerName}
               playerAvatar={playerAvatar}
+              playerAvatarBg={playerAvatarBg}
               onUpdatePlayerAvatar={handleSaveAvatar}
+              onUpdatePlayerAvatarBg={handleSaveAvatarBg}
               games={games}
               barrahCategories={barrahCategories}
               onMatchStateChange={setOnlineMatchActive}
@@ -245,9 +275,11 @@ export default function App() {
         {!playerName && (
           <NameOnboardingModal
             initialAvatar={playerAvatar}
-            onConfirm={(name, avatarId) => {
+            initialAvatarBg={playerAvatarBg}
+            onConfirm={(name, avatarId, avatarBg) => {
               handleSaveName(name);
               handleSaveAvatar(avatarId);
+              handleSaveAvatarBg(avatarBg);
             }}
           />
         )}

@@ -7,11 +7,13 @@ import { JamrainEngine } from './games/JamrainEngine';
 import { HuroofJamrEngine } from './games/HuroofJamrEngine';
 import { BarrahSalfaEngine } from './games/BarrahSalfaEngine';
 import { MafiaNoHakamEngine } from './games/MafiaNoHakamEngine';
+import { SmartDetectiveEngine } from './games/SmartDetectiveEngine';
 
 interface OfflineGameRunnerProps {
   game: GameConfig;
   playerName: string;
   playerAvatar?: string;
+  playerAvatarBg?: string;
   sections: Section[];
   topics: Topic[];
   questions: Question[];
@@ -93,6 +95,8 @@ export const OfflineGameRunner: React.FC<OfflineGameRunnerProps> = ({
       );
     case 'mafia_no_hakam':
       return <MafiaNoHakamEngine mode="offline" playerName={playerName} onExit={onExit} />;
+    case 'smart_detective':
+      return <SmartDetectiveEngine mode="offline" onBack={onExit} />;
     default:
       // Custom Admin/AI created game view
       return (

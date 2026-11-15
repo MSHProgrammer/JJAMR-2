@@ -17,6 +17,7 @@ import {
 import { BarrahCategory, RoomState } from '../../types/jamr';
 import { SoundFX } from '../../utils/soundFx';
 import { useCharacterReaction } from '../../context/CharacterReactionContext';
+import { CharacterAvatar } from '../CharacterAvatar';
 
 interface BarrahSalfaEngineProps {
   mode: 'offline' | 'online';
@@ -45,14 +46,15 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
   const [offlinePhase, setOfflinePhase] = useState<
     'setup' | 'category_vote' | 'reveal_cards' | 'questions_stage' | 'voting_pass' | 'final_chance' | 'results'
   >('setup');
-  const [offlinePlayers, setOfflinePlayers] = useState<Array<{ id: string; name: string }>>([
-    { id: 'b1', name: playerName || 'اللاعب 1' },
-    { id: 'b2', name: 'اللاعب 2' },
-    { id: 'b3', name: 'اللاعب 3' },
+  const [offlinePlayers, setOfflinePlayers] = useState<Array<{ id: string; name: string; avatar?: string; avatarBg?: string }>>([
+    { id: 'b1', name: playerName || 'اللاعب 1', avatar: 'char_01', avatarBg: 'lavender' },
+    { id: 'b2', name: 'اللاعب 2', avatar: 'char_11', avatarBg: 'mint' },
+    { id: 'b3', name: 'اللاعب 3', avatar: 'char_02', avatarBg: 'sunset' },
   ]);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [voteCatTurnIdx, setVoteCatTurnIdx] = useState(0);
   const [offlineCategoryVotes, setOfflineCategoryVotes] = useState<Record<string, string>>({});
+  const [catVoteSecondsLeft, setCatVoteSecondsLeft] = useState(10);
 
   const [secretWord, setSecretWord] = useState('');
   const [categoryName, setCategoryName] = useState('');
@@ -95,6 +97,51 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
     const t = window.setTimeout(() => setIsShufflingPair(false), 550);
     return () => clearTimeout(t);
   }, [isOnline, activePhase, br?.askerId, br?.answererId]);
+
+  // Live 10-second category voting countdown (Online server-synced deadline + Offline 10s turn/round timer)
+  useEffect(() => {
+    if (activePhase !== 'category_vote') return;
+    if (isOnline) {
+      const deadline = br?.categoryVoteDeadline || (Date.now() + 10_000);
+      let finalized = false;
+      const update = () => {
+        const rem = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        setCatVoteSecondsLeft(rem);
+        if (rem <= 0 && !finalized) {
+          finalized = true;
+          onSendAction?.({ type: 'barrah_finalize_category' });
+        }
+      };
+      update();
+      const iv = window.setInterval(update, 250);
+      return () => clearInterval(iv);
+    } else {
+      setCatVoteSecondsLeft(10);
+      const iv = window.setInterval(() => {
+        setCatVoteSecondsLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(iv);
+            const tally: Record<string, number> = {};
+            Object.values(offlineCategoryVotes).forEach((id) => {
+              tally[id] = (tally[id] || 0) + 1;
+            });
+            const entries = Object.entries(tally);
+            let winId = 'random_all';
+            if (entries.length > 0) {
+              const mx = Math.max(...entries.map(([, c]) => c));
+              const tied = entries.filter(([, c]) => c === mx).map(([id]) => id);
+              winId = tied[Math.floor(Math.random() * tied.length)] || 'random_all';
+            }
+            startOfflineWithCategory(winId);
+            return 0;
+          }
+          if (prev <= 4) SoundFX.playTick(true);
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(iv);
+    }
+  }, [activePhase, isOnline, br?.categoryVoteDeadline]);
 
   // Final chance 25s timer
   useEffect(() => {
@@ -298,7 +345,11 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                       SoundFX.playClick();
                       setOfflinePlayers((p) => [
                         ...p,
-                        { id: `b_${Date.now()}`, name: newPlayerName.trim() },
+                        {
+                          id: `b_${Date.now()}`,
+                          name: newPlayerName.trim(),
+                          avatar: `char_${String((p.length % 15) + 1).padStart(2, '0')}`,
+                        },
                       ]);
                       setNewPlayerName('');
                     }
@@ -312,7 +363,11 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                     SoundFX.playClick();
                     setOfflinePlayers((p) => [
                       ...p,
-                      { id: `b_${Date.now()}`, name: newPlayerName.trim() },
+                      {
+                        id: `b_${Date.now()}`,
+                        name: newPlayerName.trim(),
+                        avatar: `char_${String((p.length % 15) + 1).padStart(2, '0')}`,
+                      },
                     ]);
                     setNewPlayerName('');
                   }}
@@ -328,6 +383,7 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                     key={p.id}
                     className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#FFF8EE] border border-amber-200 text-xs font-black text-[#24141D]"
                   >
+                    <CharacterAvatar avatarId={p.avatar} backgroundColor={p.avatarBg} size={22} interactive={false} />
                     <span>{p.name}</span>
                     {offlinePlayers.length > 3 && (
                       <button
@@ -344,7 +400,7 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
           )}
 
           <div className="p-4 rounded-2xl bg-[#FFF8EE] border border-amber-200 text-xs sm:text-sm font-bold text-[#5C4350]">
-            🗳️ بعد الدخول للعبة سيصوّت جميع اللاعبين على موضوع السالفة معاً قبل توزيع البطاقات!
+            🗳️ بعد الدخول للعبة سيصوّت جميع اللاعبين خلال 10 ثوانٍ على موضوع السالفة مباشرة أمام الجميع!
           </div>
 
           <button
@@ -362,36 +418,69 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
         </div>
       )}
 
-      {/* PHASE 1.5: CATEGORY VOTE (Both Online & Offline — inside the game!) */}
+      {/* PHASE 1.5: LIVE CATEGORY VOTE WITH 10s TIMER & VOTER AVATARS */}
       {activePhase === 'category_vote' && (
-        <div className="rounded-3xl bg-white border-2 border-amber-200 p-6 sm:p-8 space-y-6 shadow-[0_12px_32px_rgba(255,107,0,0.1)]">
+        <div className="rounded-3xl bg-white border-2 border-amber-200 p-6 sm:p-8 space-y-5 shadow-[0_12px_32px_rgba(255,107,0,0.1)]">
           {(() => {
             const votesMap: Record<string, string> = isOnline
               ? (br?.categoryVotesByVoter || {})
               : offlineCategoryVotes;
             const myVote = isOnline ? votesMap[localPlayerId || ''] : undefined;
             const activeOnlineCount = isOnline
-              ? Math.max(1, displayPlayers.filter((p) => 'connected' in p ? p.connected : true).length || displayPlayers.length)
+              ? Math.max(1, displayPlayers.filter((p) => ('connected' in p ? p.connected : true)).length || displayPlayers.length)
               : offlinePlayers.length;
             const totalVoted = Object.keys(votesMap).length;
 
-            const votersByCat: Record<string, string[]> = {};
+            // Map categoryId -> Array of Voter Player objects
+            const votersByCat: Record<string, Array<{ id: string; name: string; avatar?: string; avatarBg?: string }>> = {};
             Object.entries(votesMap).forEach(([pid, catId]) => {
-              const pName = displayPlayers.find((p) => p.id === pid)?.name || 'لاعب';
-              votersByCat[catId] = [...(votersByCat[catId] || []), pName];
+              const pObj = displayPlayers.find((p) => p.id === pid);
+              if (!pObj) return;
+              votersByCat[catId] = [...(votersByCat[catId] || []), pObj];
             });
+
+            // Determine current highest voted category
+            const maxVotes = Math.max(0, ...Object.values(votersByCat).map((arr) => arr.length));
+            const catLabel = (cid: string) =>
+              cid === 'random_all'
+                ? '🎲 عشوائي من جميع الأقسام'
+                : categories.find((c) => c.id === cid)?.name || cid;
 
             return (
               <>
-                <div className="text-center space-y-2">
-                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl bg-[#FFF3DF] border border-[#FFB703] text-[#B45309] text-xs font-black">
-                    <Vote className="w-4 h-4 text-[#FF6B00]" />
-                    <span>
-                      {isOnline
-                        ? `صوّت ${totalVoted} من ${activeOnlineCount} لاعبين`
-                        : `تصويت ${voteCatTurnIdx + 1} من ${offlinePlayers.length}`}
-                    </span>
+                {/* Countdown Timer & Live Progress */}
+                <div className="space-y-3 text-center">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <div
+                      className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-xl border text-xs font-black tabular-nums ${
+                        catVoteSecondsLeft <= 3
+                          ? 'bg-rose-50 border-rose-400 text-rose-700 animate-pulse'
+                          : 'bg-amber-50 border-[#FFB703] text-[#B45309]'
+                      }`}
+                    >
+                      <span>⏱️</span>
+                      <span>{catVoteSecondsLeft} ثانية متبقية</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl bg-[#FFF3DF] border border-[#FFB703] text-[#B45309] text-xs font-black">
+                      <Vote className="w-4 h-4 text-[#FF6B00]" />
+                      <span>
+                        {isOnline
+                          ? `صوّت ${totalVoted} من ${activeOnlineCount} لاعبين`
+                          : `تصويت ${voteCatTurnIdx + 1} من ${offlinePlayers.length}`}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* 10s Progress Bar */}
+                  <div className="w-full max-w-md mx-auto h-2.5 rounded-full bg-amber-100 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        catVoteSecondsLeft <= 3 ? 'bg-rose-500' : 'bg-gradient-to-l from-[#FF6B00] to-[#FFB703]'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, (catVoteSecondsLeft / 10) * 100))}%` }}
+                    />
+                  </div>
+
                   <h2 className="text-2xl sm:text-3xl font-black text-[#24141D]">
                     {isOnline ? (
                       'صوّتوا لاختيار موضوع السالفة! 🗳️'
@@ -403,16 +492,50 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                     )}
                   </h2>
                   <p className="text-xs sm:text-sm text-[#6B4F5E] font-readex">
-                    {isOnline
-                      ? 'كل لاعب يختار القسم اللي يبيه، وأكثر قسم يحصل أصوات تبدأ فيه الجولة فوراً!'
-                      : 'كل لاعب يضغط القسم المفضل لديه، وبعد تصويت الجميع نوزع البطاقات مباشرة.'}
+                    يظهر تصويت كل لاعب مباشرة بالصورة والاسم — الموضوع الأكثر تصويتا تبدأ به الجولة فوراً عند اكتمال الأصوات أو انتهاء الـ 10 ثوانٍ!
                   </p>
+                </div>
+
+                {/* Live Voter Ticker (Who voted for what with CharacterAvatar + Name) */}
+                <div className="rounded-2xl bg-[#FFF8EE] border border-amber-200 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-[#5C4350]">
+                    <span>📊 البث المباشر للتصويت (صورة واسم كل لاعب)</span>
+                    <span className="text-[#D9480F]">{totalVoted}/{displayPlayers.length}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {displayPlayers.map((p) => {
+                      const votedCatId = votesMap[p.id];
+                      return (
+                        <div
+                          key={p.id}
+                          className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs transition-all ${
+                            votedCatId
+                              ? 'bg-white border-orange-300 shadow-xs'
+                              : 'bg-amber-50/50 border-amber-200/70 opacity-75'
+                          }`}
+                        >
+                          <CharacterAvatar
+                            avatarId={p.avatar}
+                            backgroundColor={'avatarBg' in p ? p.avatarBg : undefined}
+                            size={24}
+                            mood={votedCatId ? 'excited' : 'idle'}
+                            interactive={false}
+                          />
+                          <span className="font-black text-[#24141D]">{p.name}</span>
+                          <span className="text-[11px] font-bold text-[#D9480F]">
+                            {votedCatId ? `➔ ${catLabel(votedCatId)}` : '· بانتظاره ⏳'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Random All Option */}
                 {(() => {
                   const randomVoters = votersByCat['random_all'] || [];
                   const isMyChoice = myVote === 'random_all';
+                  const isLeading = maxVotes > 0 && randomVoters.length === maxVotes;
                   return (
                     <button
                       onClick={() => {
@@ -426,17 +549,39 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                       className={`w-full p-4 rounded-2xl border-2 text-right transition-all cursor-pointer flex items-center justify-between gap-3 ${
                         isMyChoice
                           ? 'bg-[#FFF3DF] border-[#FF6B00] ring-2 ring-[#FF6B00]/30 shadow-sm'
-                          : 'bg-[#FFFBF5] border-amber-200/80 hover:border-[#FF6B00]'
+                          : isLeading
+                            ? 'bg-[#FFF8EE] border-[#FFB703]'
+                            : 'bg-[#FFFBF5] border-amber-200/80 hover:border-[#FF6B00]'
                       }`}
                     >
-                      <div>
-                        <div className="font-black text-base text-[#24141D]">🎲 عشوائي من جميع الأقسام</div>
-                        <div className="text-xs text-[#6B4F5E] font-readex mt-0.5">
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black text-base text-[#24141D]">🎲 عشوائي من جميع الأقسام</span>
+                          {isLeading && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#FF6B00] text-white">
+                              الأكثر تصويتاً 🔥
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[#6B4F5E] font-readex">
                           يختار النظام قسماً وكلمة سرية مفاجئة مع 10 خيارات من نفس القسم
                         </div>
                         {randomVoters.length > 0 && (
-                          <div className="text-[11px] font-black text-[#D9480F] mt-1.5">
-                            الأصوات ({randomVoters.length}): {randomVoters.join('، ')}
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {randomVoters.map((v) => (
+                              <span
+                                key={v.id}
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-black text-[#24141D]"
+                              >
+                                <CharacterAvatar
+                                  avatarId={v.avatar}
+                                  backgroundColor={v.avatarBg}
+                                  size={18}
+                                  interactive={false}
+                                />
+                                <span>{v.name}</span>
+                              </span>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -452,6 +597,7 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                   {categories.map((cat) => {
                     const voters = votersByCat[cat.id] || [];
                     const isMyChoice = myVote === cat.id;
+                    const isLeading = maxVotes > 0 && voters.length === maxVotes;
                     return (
                       <button
                         key={cat.id}
@@ -466,27 +612,46 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                         className={`p-4 rounded-2xl border-2 text-right transition-all cursor-pointer flex flex-col justify-between gap-2 ${
                           isMyChoice
                             ? 'bg-[#FFF3DF] border-[#FF6B00] ring-2 ring-[#FF6B00]/30 shadow-sm'
-                            : voters.length > 0
-                              ? 'bg-[#FFF8EE] border-amber-300'
-                              : 'bg-[#FFFBF5] border-amber-200/70 hover:bg-[#FFF8EE] hover:border-amber-300'
+                            : isLeading
+                              ? 'bg-[#FFF8EE] border-[#FFB703] shadow-xs'
+                              : voters.length > 0
+                                ? 'bg-[#FFF8EE] border-amber-300'
+                                : 'bg-[#FFFBF5] border-amber-200/70 hover:bg-[#FFF8EE] hover:border-amber-300'
                         }`}
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2">
-                            <div className="font-black text-sm text-[#24141D] flex items-center gap-2">
-                              <span className="text-lg">{cat.icon}</span>
-                              <span>{cat.name}</span>
+                            <div className="font-black text-sm text-[#24141D] flex items-center gap-2 min-w-0">
+                              <span className="text-lg shrink-0">{cat.icon}</span>
+                              <span className="truncate">{cat.name}</span>
                             </div>
                             <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-black text-[#D9480F] tabular-nums shrink-0">
                               {voters.length}
                             </span>
                           </div>
+                          {isLeading && (
+                            <span className="inline-block mt-1 text-[10px] font-black px-2 py-0.5 rounded-md bg-[#FF6B00] text-white">
+                              الأكثر تصويتاً 🔥
+                            </span>
+                          )}
                           <p className="text-[11px] text-[#6B4F5E] font-readex mt-1">{cat.description}</p>
                         </div>
                         {(isMyChoice || voters.length > 0) && (
-                          <div className="text-[10px] font-black text-[#B45309] pt-1 border-t border-amber-200/60">
-                            {isMyChoice && <span className="text-[#FF6B00] ml-1">اختيارك ✅ ·</span>}
-                            {voters.join('، ')}
+                          <div className="flex flex-wrap items-center gap-1 pt-1.5 border-t border-amber-200/60">
+                            {voters.map((v) => (
+                              <span
+                                key={v.id}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-white border border-amber-200 text-[10px] font-black text-[#24141D]"
+                              >
+                                <CharacterAvatar
+                                  avatarId={v.avatar}
+                                  backgroundColor={v.avatarBg}
+                                  size={16}
+                                  interactive={false}
+                                />
+                                <span>{v.name}</span>
+                              </span>
+                            ))}
                           </div>
                         )}
                       </button>
@@ -505,12 +670,12 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
                         }}
                         className="px-8 py-3.5 rounded-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] text-white font-black text-base shadow-lg shadow-orange-500/20 cursor-pointer"
                       >
-                        اعتماد التصويت وبدء البطاقات الآن 🕵️
+                        اعتماد الأعلى تصويتاً وبدء البطاقات الآن 🕵️
                       </button>
                     ) : (
                       <div className="px-5 py-3 rounded-2xl bg-[#FFF8EE] border border-amber-200 text-xs font-black text-[#5C4350]">
                         {myVote
-                          ? 'تم تسجيل صوتك! بانتظار تصويت بقية اللاعبين لبدء توزيع البطاقات...'
+                          ? 'تم تسجيل صوتك! يمكنك تغييره قبل انتهاء العداد أو اكتمال الأصوات...'
                           : 'اضغط على القسم الذي تفضله للتصويت 👆'}
                       </div>
                     )

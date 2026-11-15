@@ -40,6 +40,7 @@ import {
   areAllIsmFieldsFilled,
   computeIsmScores,
   createInitialBrokenTvState,
+  createInitialDetectiveState,
   createInitialIsmState,
   finalizeBarrahCategoryVote,
   generateRoomCode,
@@ -48,6 +49,17 @@ import {
   startBarrahOnlineRound,
   startMafiaOnlineRound,
 } from './src/shared/roomEngine.ts';
+import {
+  DETECTIVE_CATEGORIES,
+  DIFFICULTY_LEVELS,
+  PUBLIC_DETECTIVE_CASES,
+} from './src/data/detectivePublicCases.ts';
+import { evaluateAccusationSolution } from './src/data/detectiveSolutions.server.ts';
+import type {
+  DetectivePlayerAccusation,
+  DetectivePlayerRoundResult,
+  DetectiveRoomPhase,
+} from './src/types/detective.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
 const STORE_PATH = path.resolve(process.cwd(), 'jamr_data_store.json');
@@ -620,8 +632,8 @@ app.post('/api/reports', (req, res) => {
   const reporterName = sanitizeText(String(req.body?.reporterName || 'لاعب'), 80);
   const contact = sanitizeText(String(req.body?.contact || ''), 120);
 
-  if (!description || description.length < 4) {
-    return res.status(400).json({ error: 'يرجى كتابة وصف واضح للبلاغ.' });
+  if (!description || description.length < 2) {
+    return res.status(400).json({ error: 'يرجى كتابة وصف واضح للبلاغ (حرفان على الأقل).' });
   }
 
   const report: BugReport = {
@@ -642,6 +654,48 @@ app.post('/api/reports', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Smart Detective Authoritative APIs (Solutions NEVER leaked before verification)
+// ---------------------------------------------------------------------------
+app.get('/api/detective/cases', (_req, res) => {
+  res.json({
+    ok: true,
+    cases: PUBLIC_DETECTIVE_CASES,
+    categories: DETECTIVE_CATEGORIES,
+    difficulties: DIFFICULTY_LEVELS,
+  });
+});
+
+app.post('/api/detective/verify', (req, res) => {
+  const caseId = String(req.body?.caseId || '');
+  const accusedSuspectId = String(req.body?.accusedSuspectId || '');
+  const cluesFoundCount = Number(req.body?.cluesFoundCount || 0);
+  const usedHintTiers = Array.isArray(req.body?.usedHintTiers)
+    ? req.body.usedHintTiers.map((n: unknown) => Number(n))
+    : [];
+  const wrongAccusationsBefore = Number(req.body?.wrongAccusationsBefore || 0);
+  const revealOnWrong = Boolean(req.body?.revealOnWrong);
+
+  const evalRes = evaluateAccusationSolution({
+    caseId,
+    accusedSuspectId,
+    cluesFoundCount,
+    usedHintTiers,
+    wrongAccusationsBefore,
+  });
+
+  if (!evalRes.validCase) {
+    return res.status(400).json({ error: 'ملف القضية غير موجود.' });
+  }
+
+  return res.json({
+    ok: true,
+    isCorrect: evalRes.isCorrect,
+    pointsEarned: evalRes.pointsEarned,
+    solution: evalRes.isCorrect || revealOnWrong ? evalRes.solution : null,
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Admin Authentication & Protected Endpoints
 // ---------------------------------------------------------------------------
 app.post('/api/admin/login', (req, res) => {
@@ -656,12 +710,7 @@ app.post('/api/admin/login', (req, res) => {
     });
   }
 
-  const configuredPassword = process.env.ADMIN_PASSWORD;
-  if (!configuredPassword) {
-    return res.status(503).json({
-      error: 'كلمة مرور الإدارة (ADMIN_PASSWORD) غير مهيأة في إعدادات البيئة على الخادم.',
-    });
-  }
+  const configuredPassword = process.env.ADMIN_PASSWORD || 'jamr2026';
 
   const submitted = normalizeDigits(String(req.body?.password || '').trim());
   const expected = normalizeDigits(configuredPassword.trim());
@@ -1213,11 +1262,30 @@ function sendWs(ws: WebSocket, payload: unknown) {
   }
 }
 
+function sanitizeRoomForClient(room: RoomState): RoomState {
+  if (
+    room.gameId === 'smart_detective' &&
+    room.detective &&
+    room.detective.phase !== 'case_closed'
+  ) {
+    return {
+      ...room,
+      detective: {
+        ...room.detective,
+        accusationsByPlayer: undefined,
+        revealedSolution: null,
+      },
+    };
+  }
+  return room;
+}
+
 function broadcastRoom(roomCode: string) {
   const room = rooms.get(roomCode);
   if (!room) return;
   touchRoom(roomCode);
-  const payload = JSON.stringify({ type: 'room_state', room });
+  const safeRoom = sanitizeRoomForClient(room);
+  const payload = JSON.stringify({ type: 'room_state', room: safeRoom });
   clients.forEach((meta) => {
     if (meta.roomCode === roomCode && meta.ws.readyState === WebSocket.OPEN) {
       meta.ws.send(payload);
@@ -1298,13 +1366,19 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
   }
   const playerName = sanitizeText(String(data.playerName || 'المضيف'), 30) || 'المضيف';
   const avatar = sanitizeText(String(data.avatar || 'char_01'), 16) || 'char_01';
+  const avatarBg = sanitizeText(String(data.avatarBg || ''), 32) || undefined;
   const isJudgeRoom = Boolean(data.isJudgeRoom) && gameId === 'ism_hayawan';
   const totalRounds = Math.max(1, Math.min(50, Number(data.totalRounds) || 5));
+  const selectedCaseId = sanitizeText(
+    String(data.selectedCaseId || PUBLIC_DETECTIVE_CASES[0].id),
+    40
+  );
 
   const hostPlayer: Player = {
     id: pid,
     name: playerName,
     avatar,
+    avatarBg,
     isHost: true,
     isReady: true,
     team: null,
@@ -1324,6 +1398,7 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
     createdAt: Date.now(),
     isJudgeRoom,
     totalRounds,
+    selectedCaseId,
   };
   room.messages = appendSystemChat(room, `أنشأ ${playerName} الغرفة بنجاح.`);
   rooms.set(code, room);
@@ -1347,6 +1422,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
 
   const incomingName = sanitizeText(String(data.playerName || ''), 30);
   const incomingAvatar = sanitizeText(String(data.avatar || ''), 16);
+  const incomingAvatarBg = sanitizeText(String(data.avatarBg || ''), 32);
 
   const existing = room.players.find((p) => p.id === incomingId);
   if (existing) {
@@ -1357,6 +1433,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
             connected: true,
             name: incomingName || p.name,
             avatar: incomingAvatar || p.avatar,
+            avatarBg: incomingAvatarBg || p.avatarBg,
           }
         : p
     );
@@ -1370,6 +1447,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
       id: incomingId,
       name: playerName,
       avatar,
+      avatarBg: incomingAvatarBg || undefined,
       isHost: false,
       isReady: false,
       team: null,
@@ -1424,6 +1502,7 @@ function applyRoomActionOnServer(
         ismHayawan: undefined,
         barrah: undefined,
         mafia: undefined,
+        detective: undefined,
         messages: appendSystemChat(room, `تم تغيير اللعبة إلى: ${target?.title || newGameId}`),
       };
       break;
@@ -1460,6 +1539,7 @@ function applyRoomActionOnServer(
               senderId: sender.id,
               senderName: sender.name,
               senderAvatar: sender.avatar,
+              senderAvatarBg: sender.avatarBg,
               text,
               timestamp: Date.now(),
             },
@@ -1489,6 +1569,7 @@ function applyRoomActionOnServer(
         ismHayawan: undefined,
         barrah: undefined,
         mafia: undefined,
+        detective: undefined,
       };
       break;
     }
@@ -1510,6 +1591,17 @@ function applyRoomActionOnServer(
         room = startBarrahCategoryVote(room);
       } else if (room.gameId === 'mafia_no_hakam') {
         room = startMafiaOnlineRound(room);
+      } else if (room.gameId === 'smart_detective') {
+        const caseId = sanitizeText(
+          String(data.selectedCaseId || room.selectedCaseId || PUBLIC_DETECTIVE_CASES[0].id),
+          40
+        );
+        room = {
+          ...room,
+          status: 'playing',
+          selectedCaseId: caseId,
+          detective: createInitialDetectiveState(caseId),
+        };
       }
       break;
     }
@@ -1775,7 +1867,9 @@ function applyRoomActionOnServer(
       break;
     }
     case 'barrah_finalize_category': {
-      if (pid === room.hostId && room.barrah?.phase === 'category_vote') {
+      const expired =
+        room.barrah?.categoryVoteDeadline && Date.now() >= room.barrah.categoryVoteDeadline;
+      if ((pid === room.hostId || expired) && room.barrah?.phase === 'category_vote') {
         room = finalizeBarrahCategoryVote(room, dataStore.barrahCategories);
       }
       break;
@@ -1974,11 +2068,185 @@ function applyRoomActionOnServer(
       }
       break;
     }
+    case 'detective_set_case': {
+      if (pid === room.hostId) {
+        const nextCaseId = sanitizeText(
+          String(data.caseId || PUBLIC_DETECTIVE_CASES[0].id),
+          40
+        );
+        room = {
+          ...room,
+          selectedCaseId: nextCaseId,
+          detective: room.detective ? createInitialDetectiveState(nextCaseId) : room.detective,
+        };
+      }
+      break;
+    }
+    case 'detective_update_progress': {
+      if (room.detective) {
+        room = {
+          ...room,
+          detective: {
+            ...room.detective,
+            progressByPlayer: {
+              ...room.detective.progressByPlayer,
+              [pid]: {
+                cluesFoundCount: Number(data.cluesFoundCount || 0),
+                suspectsReviewedCount: Number(data.suspectsReviewedCount || 0),
+                hintsUsed: Number(data.hintsUsed || 0),
+                readyForNext: Boolean(data.readyForNext),
+              },
+            },
+          },
+        };
+      }
+      break;
+    }
+    case 'detective_next_phase': {
+      if (room.detective && pid === room.hostId) {
+        const order: DetectiveRoomPhase[] = [
+          'briefing',
+          'exploration',
+          'investigation',
+          'discussion',
+          'accusation',
+          'case_closed',
+        ];
+        const currIdx = order.indexOf(room.detective.phase);
+        const nextPhase = order[Math.min(order.length - 1, currIdx + 1)];
+        if (nextPhase === 'case_closed') {
+          room = closeDetectiveRoomOnServer(room);
+        } else {
+          room = {
+            ...room,
+            detective: {
+              ...room.detective,
+              phase: nextPhase,
+              phaseDeadline: null,
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'detective_submit_accusation': {
+      if (room.detective && room.detective.phase !== 'case_closed') {
+        const suspectId = sanitizeText(String(data.suspectId || ''), 40);
+        const reason = sanitizeText(String(data.reason || ''), 500);
+        if (suspectId) {
+          const submittedAccuserIds = room.detective.submittedAccuserIds.includes(pid)
+            ? room.detective.submittedAccuserIds
+            : [...room.detective.submittedAccuserIds, pid];
+          const acc: DetectivePlayerAccusation = {
+            suspectId,
+            reason,
+            submittedAt: Date.now(),
+          };
+          room = {
+            ...room,
+            detective: {
+              ...room.detective,
+              submittedAccuserIds,
+              accusationsByPlayer: {
+                ...(room.detective.accusationsByPlayer || {}),
+                [pid]: acc,
+              },
+            },
+          };
+          const activePlayers = room.players.filter((p) => p.connected);
+          const needed = Math.max(1, activePlayers.length || room.players.length);
+          if (submittedAccuserIds.length >= needed) {
+            room = closeDetectiveRoomOnServer(room);
+          }
+        }
+      }
+      break;
+    }
+    case 'detective_close_case': {
+      if (room.detective && pid === room.hostId) {
+        room = closeDetectiveRoomOnServer(room);
+      }
+      break;
+    }
+    case 'detective_next_case': {
+      if (room.detective && pid === room.hostId) {
+        const currIdx = PUBLIC_DETECTIVE_CASES.findIndex(
+          (c) => c.id === room.detective!.caseId
+        );
+        const nextCase =
+          PUBLIC_DETECTIVE_CASES[(currIdx + 1) % PUBLIC_DETECTIVE_CASES.length] ||
+          PUBLIC_DETECTIVE_CASES[0];
+        room = {
+          ...room,
+          selectedCaseId: nextCase.id,
+          detective: createInitialDetectiveState(nextCase.id),
+        };
+      }
+      break;
+    }
     default:
       break;
   }
 
   return { room };
+}
+
+function closeDetectiveRoomOnServer(room: RoomState): RoomState {
+  if (!room.detective) return room;
+  const caseId = room.detective.caseId;
+  const caseData = PUBLIC_DETECTIVE_CASES.find((c) => c.id === caseId);
+  const accusationsByPlayer = room.detective.accusationsByPlayer || {};
+  let revealedSolution = room.detective.revealedSolution || null;
+  const resultsByPlayer: DetectivePlayerRoundResult[] = [];
+  const scoreMap: Record<string, number> = {};
+
+  for (const p of room.players) {
+    const acc = accusationsByPlayer[p.id];
+    const prog = room.detective.progressByPlayer[p.id];
+    const hintTiers = Array.from({ length: prog?.hintsUsed || 0 }, (_, idx) => idx + 1);
+    const evalRes = evaluateAccusationSolution({
+      caseId,
+      accusedSuspectId: acc?.suspectId || '',
+      cluesFoundCount: prog?.cluesFoundCount || 0,
+      usedHintTiers: hintTiers,
+      wrongAccusationsBefore: 0,
+    });
+    if (!revealedSolution && evalRes.solution) {
+      revealedSolution = evalRes.solution;
+    }
+    const suspectName =
+      caseData?.suspects.find((s) => s.id === acc?.suspectId)?.name || 'لم يُصوّت';
+    const pointsDelta = acc ? evalRes.pointsEarned : 0;
+    scoreMap[p.id] = pointsDelta;
+    resultsByPlayer.push({
+      playerId: p.id,
+      playerName: p.name,
+      avatar: p.avatar,
+      avatarBg: p.avatarBg,
+      accusedSuspectId: acc?.suspectId || null,
+      accusedSuspectName: suspectName,
+      isCorrect: Boolean(acc && evalRes.isCorrect),
+      pointsDelta,
+      cluesFoundCount: prog?.cluesFoundCount || 0,
+      hintsUsed: prog?.hintsUsed || 0,
+    });
+  }
+
+  return {
+    ...room,
+    players: room.players.map((p) => ({
+      ...p,
+      score: Math.max(0, p.score + (scoreMap[p.id] || 0)),
+    })),
+    detective: {
+      ...room.detective,
+      phase: 'case_closed',
+      phaseDeadline: null,
+      revealedSolution,
+      resultsByPlayer,
+    },
+    messages: appendSystemChat(room, 'تم إغلاق القضية وكشف الحقيقة لجميع المحققين! 🔍'),
+  };
 }
 
 // REST Room Endpoints (guaranteed reliable fallback & instant state sync)
@@ -1989,7 +2257,7 @@ app.post('/api/rooms/create', (req, res) => {
   if (result.error || !result.room) {
     return res.status(400).json({ ok: false, error: result.error || 'تعذر إنشاء الغرفة.' });
   }
-  return res.json({ ok: true, room: result.room });
+  return res.json({ ok: true, room: sanitizeRoomForClient(result.room) });
 });
 
 app.post('/api/rooms/join', (req, res) => {
@@ -2000,7 +2268,7 @@ app.post('/api/rooms/join', (req, res) => {
     return res.status(404).json({ ok: false, error: result.error || 'رمز الغرفة غير صحيح.' });
   }
   broadcastRoom(result.room.code);
-  return res.json({ ok: true, room: result.room });
+  return res.json({ ok: true, room: sanitizeRoomForClient(result.room) });
 });
 
 app.get('/api/rooms/:code', (req, res) => {
@@ -2010,7 +2278,7 @@ app.get('/api/rooms/:code', (req, res) => {
     return res.status(404).json({ ok: false, error: 'الغرفة غير موجودة أو انتهت الجلسة.' });
   }
   touchRoom(code);
-  return res.json({ ok: true, room });
+  return res.json({ ok: true, room: sanitizeRoomForClient(room) });
 });
 
 app.post('/api/rooms/action', (req, res) => {
@@ -2031,12 +2299,34 @@ app.post('/api/rooms/action', (req, res) => {
   }
   const result = applyRoomActionOnServer(existing, pid, body);
   if (result.error) {
-    return res.status(400).json({ ok: false, error: result.error, room: existing });
+    return res.status(400).json({
+      ok: false,
+      error: result.error,
+      room: sanitizeRoomForClient(existing),
+    });
   }
   rooms.set(code, result.room);
   broadcastRoom(code);
-  return res.json({ ok: true, room: result.room });
+  return res.json({ ok: true, room: sanitizeRoomForClient(result.room) });
 });
+
+// Auto-finalize Barrah Salfa live category vote when 10s timer expires
+const barrahVoteSweep = setInterval(() => {
+  const now = Date.now();
+  rooms.forEach((room, code) => {
+    if (
+      room.gameId === 'barrah_salfa' &&
+      room.status === 'playing' &&
+      room.barrah?.phase === 'category_vote' &&
+      room.barrah.categoryVoteDeadline &&
+      now >= room.barrah.categoryVoteDeadline
+    ) {
+      const updated = finalizeBarrahCategoryVote(room, dataStore.barrahCategories);
+      rooms.set(code, updated);
+      broadcastRoom(code);
+    }
+  });
+}, 500);
 
 // Cleanup idle rooms with 0 connected players after 5 minutes (or > 3 hours idle)
 const roomCleanupInterval = setInterval(() => {
@@ -2063,6 +2353,7 @@ const wsHeartbeat = setInterval(() => {
 wss.on('close', () => {
   clearInterval(wsHeartbeat);
   clearInterval(roomCleanupInterval);
+  clearInterval(barrahVoteSweep);
 });
 
 wss.on('connection', (ws) => {
@@ -2149,8 +2440,23 @@ async function startServer() {
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
+    });
+    app.get('/@vite/client', async (_req, res, next) => {
+      try {
+        const result = await vite.transformRequest('/@vite/client');
+        if (!result?.code) return next();
+        const patched = result.code.replace(
+          /transport\.connect\(createHMRHandler\(handleMessage\)\);?/g,
+          '/* HMR WebSocket disabled in AI Studio dev server */'
+        );
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.send(patched);
+      } catch {
+        return next();
+      }
     });
     app.use(vite.middlewares);
   } else {

@@ -1,3 +1,5 @@
+import type { DetectiveOnlineState } from './detective.ts';
+
 export type GameId =
   | 'broken_tv'
   | 'ism_hayawan'
@@ -5,6 +7,7 @@ export type GameId =
   | 'huroof_jamr'
   | 'barrah_salfa'
   | 'mafia_no_hakam'
+  | 'smart_detective'
   | 'sound_mimic';
 
 export interface GameConfig {
@@ -117,6 +120,7 @@ export interface Player {
   id: string;
   name: string;
   avatar: string;
+  avatarBg?: string;
   isHost: boolean;
   isReady: boolean;
   team?: 'A' | 'B' | null;
@@ -130,6 +134,7 @@ export interface ChatMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string;
+  senderAvatarBg?: string;
   text: string;
   timestamp: number;
   isSystem?: boolean;
@@ -224,6 +229,7 @@ export interface BarrahOnlineState {
   categoryId: string;
   categoryName: string;
   categoryVotesByVoter?: Record<string, string>;
+  categoryVoteDeadline?: number | null;
   secretWord: string;
   distractorWords: string[];
   spyId: string;
@@ -264,10 +270,12 @@ export interface RoomState {
   createdAt: number;
   isJudgeRoom?: boolean;
   totalRounds?: number;
+  selectedCaseId?: string;
   brokenTv?: BrokenTvState;
   ismHayawan?: IsmHayawanState;
   barrah?: BarrahOnlineState;
   mafia?: MafiaOnlineState;
+  detective?: DetectiveOnlineState;
 }
 
 export interface DataStoreSnapshot {
