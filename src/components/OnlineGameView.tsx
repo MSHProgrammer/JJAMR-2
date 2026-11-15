@@ -19,19 +19,23 @@ import { BrokenTvEngine } from './games/BrokenTvEngine';
 import { IsmHayawanEngine } from './games/IsmHayawanEngine';
 import { BarrahSalfaEngine } from './games/BarrahSalfaEngine';
 import { MafiaNoHakamEngine } from './games/MafiaNoHakamEngine';
+import { CHARACTER_AVATARS, DEFAULT_AVATAR_ID, sanitizeAvatarId } from '../data/characterAvatars';
+import { CharacterAvatar } from './CharacterAvatar';
+import { useCharacterReaction } from '../context/CharacterReactionContext';
 
 interface OnlineGameViewProps {
   initialTab: 'create' | 'join';
   initialGameId?: string;
   initialRoomCode?: string;
   playerName: string;
+  playerAvatar?: string;
+  onUpdatePlayerAvatar?: (avatarId: string) => void;
   games: GameConfig[];
   barrahCategories: BarrahCategory[];
   onMatchStateChange?: (active: boolean) => void;
   onExit: () => void;
 }
 
-const AVATARS = ['🔥', '🦁', '🦅', '⚡', '🦊', '🐼', '🎭', '🚀', '🌟', '🎮'];
 const QUICK_EMOJIS = ['😂', '🔥', '👏', '😱', '🤔', '🎉'];
 
 export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
@@ -39,20 +43,24 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   initialGameId,
   initialRoomCode,
   playerName,
+  playerAvatar,
+  onUpdatePlayerAvatar,
   games,
   barrahCategories,
   onMatchStateChange,
   onExit,
 }) => {
   const onlineGames = games.filter((g) => g.supportsOnline && g.isActive && !g.underMaintenance);
+  const { triggerReaction, setTypingActive } = useCharacterReaction();
 
   const [tab, setTab] = useState<'create' | 'join'>(initialTab);
   const [guestName, setGuestName] = useState(playerName || 'لاعب جَمْر');
   const [avatar, setAvatar] = useState(() => {
+    if (playerAvatar) return sanitizeAvatarId(playerAvatar);
     try {
-      return window.localStorage.getItem('jamr_player_avatar') || '🔥';
+      return sanitizeAvatarId(window.localStorage.getItem('jamr_player_avatar'));
     } catch {
-      return '🔥';
+      return DEFAULT_AVATAR_ID;
     }
   });
   const [selectedGameId, setSelectedGameId] = useState<string>(
@@ -113,13 +121,22 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     clientRef.current?.setCategories(barrahCategories);
   }, [barrahCategories]);
 
+  useEffect(() => {
+    if (playerAvatar) {
+      setAvatar(sanitizeAvatarId(playerAvatar));
+    }
+  }, [playerAvatar]);
+
   const localPlayerId = clientRef.current?.getPlayerId() || '';
   const isHost = room ? room.hostId === localPlayerId : false;
 
   const saveAvatar = (av: string) => {
-    setAvatar(av);
+    const clean = sanitizeAvatarId(av);
+    setAvatar(clean);
+    onUpdatePlayerAvatar?.(clean);
+    triggerReaction('excited', 'شخصية رهيبة! ✨', 1800);
     try {
-      window.localStorage.setItem('jamr_player_avatar', av);
+      window.localStorage.setItem('jamr_player_avatar', clean);
     } catch {
       // ignore
     }
@@ -133,6 +150,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       return;
     }
     SoundFX.playTileSelect();
+    triggerReaction('picking_game', 'فتحنا الغرفة! 🚀', 2200);
     setErrorMsg('');
     void clientRef.current?.createRoom({
       playerName: cleanName,
@@ -151,6 +169,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       return;
     }
     SoundFX.playTileSelect();
+    triggerReaction('excited', 'دخول سريع! ⚡', 2000);
     setErrorMsg('');
     void clientRef.current?.joinRoom({
       roomCode: cleanCode,
@@ -159,10 +178,17 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     });
   };
 
+  const handleChatInputChange = (val: string) => {
+    setChatInput(val);
+    setTypingActive(val.trim().length > 0);
+  };
+
   const sendChat = (textToSend?: string) => {
     const txt = (textToSend ?? chatInput).trim();
     if (!txt) return;
     SoundFX.playClick();
+    setTypingActive(false);
+    triggerReaction('chat_sent', txt.length <= 4 ? txt : 'تم الإرسال! 💬', 1600);
     clientRef.current?.send({ type: 'chat_message', text: txt });
     if (!textToSend) setChatInput('');
   };
@@ -268,9 +294,21 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs bg-[#FFFDF9]">
               {room.messages.map((m) => (
-                <div key={m.id} className={m.isSystem ? 'text-orange-700 font-bold bg-amber-50 p-1.5 rounded-lg' : 'text-[#23140E]'}>
-                  <span className="font-black">{m.senderAvatar} {m.senderName}: </span>
-                  <span>{m.text}</span>
+                <div
+                  key={m.id}
+                  className={`flex items-start gap-2 ${
+                    m.isSystem ? 'text-orange-700 font-bold bg-amber-50 p-1.5 rounded-lg' : 'text-[#23140E]'
+                  }`}
+                >
+                  {m.isSystem ? (
+                    <span className="shrink-0">🔥</span>
+                  ) : (
+                    <CharacterAvatar avatarId={m.senderAvatar} size={24} interactive={false} />
+                  )}
+                  <div className="min-w-0">
+                    <span className="font-black">{m.senderName}: </span>
+                    <span className="break-words">{m.text}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -278,7 +316,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               <input
                 type="text"
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+                onChange={(e) => handleChatInputChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendChat()}
                 placeholder="اكتب رسالة..."
                 className="flex-1 rounded-lg bg-[#FFF8EE] border border-amber-200 px-2.5 py-1.5 text-xs text-[#23140E]"
@@ -419,7 +457,12 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                     className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-[#FFF8EE] border border-amber-200"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="text-xl">{p.avatar}</span>
+                      <CharacterAvatar
+                        avatarId={p.avatar}
+                        size={38}
+                        mood={p.id === localPlayerId ? 'excited' : 'idle'}
+                        interactive={false}
+                      />
                       <div className="truncate">
                         <div className="text-sm font-black text-[#23140E] flex items-center gap-1.5">
                           <span className="truncate">{p.name}</span>
@@ -481,14 +524,21 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               {room.messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`p-2.5 rounded-xl ${
+                  className={`p-2.5 rounded-xl flex items-start gap-2.5 ${
                     m.isSystem
                       ? 'bg-amber-50 border border-amber-200 text-orange-800 font-bold'
                       : 'bg-[#FFF8EE] border border-amber-100 text-[#23140E]'
                   }`}
                 >
-                  <span className="font-black text-[#23140E]">{m.senderAvatar} {m.senderName}: </span>
-                  <span>{m.text}</span>
+                  {m.isSystem ? (
+                    <span className="text-base shrink-0">🔥</span>
+                  ) : (
+                    <CharacterAvatar avatarId={m.senderAvatar} size={28} interactive={false} />
+                  )}
+                  <div className="min-w-0">
+                    <span className="font-black text-[#23140E]">{m.senderName}: </span>
+                    <span className="break-words">{m.text}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -509,7 +559,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               <input
                 type="text"
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+                onChange={(e) => handleChatInputChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendChat()}
                 placeholder="اكتب رسالة للغرفة..."
                 className="flex-1 rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E] focus:outline-none focus:border-orange-500"
@@ -560,24 +610,37 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-[#5A3E32] mb-1.5">اختر الأفاتار</label>
-            <div className="flex flex-wrap gap-1.5">
-              {AVATARS.map((av) => (
-                <button
-                  key={av}
-                  onClick={() => {
-                    SoundFX.playClick();
-                    saveAvatar(av);
-                  }}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg cursor-pointer ${
-                    avatar === av
-                      ? 'bg-orange-500 ring-2 ring-amber-400 shadow-sm'
-                      : 'bg-[#FFF8EE] border border-amber-200 hover:bg-amber-100'
-                  }`}
-                >
-                  {av}
-                </button>
-              ))}
+            <label className="block text-xs font-bold text-[#5A3E32] mb-1.5">اختر شخصيتك الكرتونية</label>
+            <div className="grid grid-cols-5 gap-2">
+              {CHARACTER_AVATARS.map((char) => {
+                const active = avatar === char.id;
+                return (
+                  <button
+                    key={char.id}
+                    type="button"
+                    onClick={() => {
+                      SoundFX.playTileSelect();
+                      saveAvatar(char.id);
+                    }}
+                    title={`${char.name} (${char.tagline})`}
+                    className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
+                      active
+                        ? 'bg-amber-50 ring-2 ring-orange-500 shadow-sm scale-105'
+                        : 'bg-[#FFF8EE] border border-amber-200 hover:bg-amber-50'
+                    }`}
+                  >
+                    <CharacterAvatar
+                      avatarId={char.id}
+                      size={36}
+                      mood={active ? 'excited' : 'idle'}
+                      interactive={false}
+                    />
+                    <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
+                      {char.name}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -615,6 +678,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                     onClick={() => {
                       SoundFX.playClick();
                       setSelectedGameId(g.id);
+                      triggerReaction('picking_game', `${g.title}! 🎮`, 1800);
                     }}
                     className={`p-3.5 rounded-2xl border-2 text-right flex items-center gap-3 cursor-pointer ${
                       selectedGameId === g.id

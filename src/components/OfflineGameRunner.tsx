@@ -11,6 +11,7 @@ import { MafiaNoHakamEngine } from './games/MafiaNoHakamEngine';
 interface OfflineGameRunnerProps {
   game: GameConfig;
   playerName: string;
+  playerAvatar?: string;
   sections: Section[];
   topics: Topic[];
   questions: Question[];
@@ -23,6 +24,7 @@ interface OfflineGameRunnerProps {
 export const OfflineGameRunner: React.FC<OfflineGameRunnerProps> = ({
   game,
   playerName,
+  playerAvatar,
   sections,
   topics,
   questions,
@@ -70,6 +72,7 @@ export const OfflineGameRunner: React.FC<OfflineGameRunnerProps> = ({
     case 'jamrain':
       return (
         <JamrainEngine
+          playerAvatar={playerAvatar}
           sections={sections}
           topics={topics}
           questions={questions}

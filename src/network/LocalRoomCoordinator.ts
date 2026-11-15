@@ -236,7 +236,7 @@ export class LocalRoomCoordinator {
           const newPlayer: Player = {
             id: pid,
             name: String(action.playerName || 'لاعب'),
-            avatar: String(action.avatar || '🔥'),
+            avatar: String(action.avatar || 'char_01'),
             isHost: false,
             isReady: false,
             team: null,

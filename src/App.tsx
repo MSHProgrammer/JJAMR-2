@@ -19,6 +19,8 @@ import { MaintenanceModal } from './components/MaintenanceModal';
 import { OfflineGameRunner } from './components/OfflineGameRunner';
 import { OnlineGameView } from './components/OnlineGameView';
 import { AdminPanel } from './components/AdminPanel';
+import { CharacterReactionProvider } from './context/CharacterReactionContext';
+import { DEFAULT_AVATAR_ID, sanitizeAvatarId } from './data/characterAvatars';
 
 type ViewMode =
   | { kind: 'home' }
@@ -32,6 +34,14 @@ export default function App() {
       return window.localStorage.getItem('jamr_player_name') || '';
     } catch {
       return '';
+    }
+  });
+
+  const [playerAvatar, setPlayerAvatar] = useState<string>(() => {
+    try {
+      return sanitizeAvatarId(window.localStorage.getItem('jamr_player_avatar'));
+    } catch {
+      return DEFAULT_AVATAR_ID;
     }
   });
 
@@ -104,6 +114,16 @@ export default function App() {
     }
   };
 
+  const handleSaveAvatar = (avatarId: string) => {
+    const clean = sanitizeAvatarId(avatarId);
+    setPlayerAvatar(clean);
+    try {
+      window.localStorage.setItem('jamr_player_avatar', clean);
+    } catch {
+      // ignore
+    }
+  };
+
   const openOfflineGame = (game: GameConfig) => {
     if (game.underMaintenance || !game.isActive) {
       setMaintenanceGame(game);
@@ -124,120 +144,137 @@ export default function App() {
   const isInMatch = view.kind === 'offline' || (view.kind === 'online' && onlineMatchActive);
 
   return (
-    <div className="min-h-screen flex flex-col bg-transparent text-[#23140E]">
-      <Header
-        playerName={playerName}
-        onUpdatePlayerName={handleSaveName}
-        isInMatch={isInMatch}
-        isHome={view.kind === 'home'}
-        onGoHome={() => {
-          setOnlineMatchActive(false);
-          setView({ kind: 'home' });
-        }}
-        onResetMatch={handleResetMatch}
-        onOpenRules={() => setShowRulesModal(true)}
-        onOpenAdmin={() => setView({ kind: 'admin' })}
-      />
+    <CharacterReactionProvider>
+      <div className="min-h-screen flex flex-col bg-transparent text-[#23140E]">
+        <Header
+          playerName={playerName}
+          playerAvatar={playerAvatar}
+          onUpdatePlayerName={handleSaveName}
+          onUpdatePlayerAvatar={handleSaveAvatar}
+          isInMatch={isInMatch}
+          isHome={view.kind === 'home'}
+          onGoHome={() => {
+            setOnlineMatchActive(false);
+            setView({ kind: 'home' });
+          }}
+          onResetMatch={handleResetMatch}
+          onOpenRules={() => setShowRulesModal(true)}
+          onOpenAdmin={() => setView({ kind: 'admin' })}
+        />
 
-      <main className="flex-1">
-        {view.kind === 'home' && (
-          <HomeScreen
+        <main className="flex-1">
+          {view.kind === 'home' && (
+            <HomeScreen
+              games={games}
+              playerName={playerName || 'لاعب جَمْر'}
+              playerAvatar={playerAvatar}
+              onUpdatePlayerName={handleSaveName}
+              onUpdatePlayerAvatar={handleSaveAvatar}
+              onSelectOfflineGame={openOfflineGame}
+              onSelectOnlineCreate={(gameId) =>
+                setView({ kind: 'online', tab: 'create', gameId, matchKey: Date.now() })
+              }
+              onSelectOnlineJoin={() =>
+                setView({ kind: 'online', tab: 'join', matchKey: Date.now() })
+              }
+              onShowMaintenance={(g) => setMaintenanceGame(g)}
+            />
+          )}
+
+          {view.kind === 'offline' && (
+            <OfflineGameRunner
+              key={view.matchKey}
+              game={view.game}
+              playerName={playerName || 'لاعب جَمْر'}
+              playerAvatar={playerAvatar}
+              sections={sections}
+              topics={topics}
+              questions={questions}
+              barrahCategories={barrahCategories}
+              onQuestionsAdded={(added) => {
+                if (!Array.isArray(added) || added.length === 0) return;
+                setQuestions((prev) => {
+                  const seen = new Set(prev.map((q) => q.id));
+                  const fresh = added.filter((q) => q && q.id && !seen.has(q.id));
+                  return fresh.length > 0 ? [...fresh, ...prev] : prev;
+                });
+              }}
+              onJoinOnlineRoom={(code, name) => {
+                if (name) handleSaveName(name);
+                setView({
+                  kind: 'online',
+                  tab: 'join',
+                  roomCode: code,
+                  matchKey: Date.now(),
+                });
+              }}
+              onExit={() => setView({ kind: 'home' })}
+            />
+          )}
+
+          {view.kind === 'online' && (
+            <OnlineGameView
+              key={view.matchKey}
+              initialTab={view.tab}
+              initialGameId={view.gameId}
+              initialRoomCode={view.roomCode}
+              playerName={playerName || 'لاعب جَمْر'}
+              playerAvatar={playerAvatar}
+              onUpdatePlayerAvatar={handleSaveAvatar}
+              games={games}
+              barrahCategories={barrahCategories}
+              onMatchStateChange={setOnlineMatchActive}
+              onExit={() => {
+                setOnlineMatchActive(false);
+                setView({ kind: 'home' });
+              }}
+            />
+          )}
+
+          {view.kind === 'admin' && (
+            <AdminPanel
+              onDataUpdated={() => void fetchCatalogData()}
+              onExit={() => setView({ kind: 'home' })}
+            />
+          )}
+        </main>
+
+        <Footer onOpenReport={() => setShowReportModal(true)} />
+
+        {/* Zero-Login First-Load Name + Character Onboarding */}
+        {!playerName && (
+          <NameOnboardingModal
+            initialAvatar={playerAvatar}
+            onConfirm={(name, avatarId) => {
+              handleSaveName(name);
+              handleSaveAvatar(avatarId);
+            }}
+          />
+        )}
+
+        {showRulesModal && (
+          <HowToPlayModal
             games={games}
-            playerName={playerName || 'لاعب جَمْر'}
-            onUpdatePlayerName={handleSaveName}
-            onSelectOfflineGame={openOfflineGame}
-            onSelectOnlineCreate={(gameId) =>
-              setView({ kind: 'online', tab: 'create', gameId, matchKey: Date.now() })
-            }
-            onSelectOnlineJoin={() =>
-              setView({ kind: 'online', tab: 'join', matchKey: Date.now() })
-            }
-            onShowMaintenance={(g) => setMaintenanceGame(g)}
+            initialGameId={view.kind === 'offline' ? view.game.id : undefined}
+            onClose={() => setShowRulesModal(false)}
           />
         )}
 
-        {view.kind === 'offline' && (
-          <OfflineGameRunner
-            key={view.matchKey}
-            game={view.game}
-            playerName={playerName || 'لاعب جَمْر'}
-            sections={sections}
-            topics={topics}
-            questions={questions}
-            barrahCategories={barrahCategories}
-            onQuestionsAdded={(added) => {
-              if (!Array.isArray(added) || added.length === 0) return;
-              setQuestions((prev) => {
-                const seen = new Set(prev.map((q) => q.id));
-                const fresh = added.filter((q) => q && q.id && !seen.has(q.id));
-                return fresh.length > 0 ? [...fresh, ...prev] : prev;
-              });
-            }}
-            onJoinOnlineRoom={(code, name) => {
-              if (name) handleSaveName(name);
-              setView({
-                kind: 'online',
-                tab: 'join',
-                roomCode: code,
-                matchKey: Date.now(),
-              });
-            }}
-            onExit={() => setView({ kind: 'home' })}
-          />
-        )}
-
-        {view.kind === 'online' && (
-          <OnlineGameView
-            key={view.matchKey}
-            initialTab={view.tab}
-            initialGameId={view.gameId}
-            initialRoomCode={view.roomCode}
-            playerName={playerName || 'لاعب جَمْر'}
+        {showReportModal && (
+          <BugReportModal
             games={games}
-            barrahCategories={barrahCategories}
-            onMatchStateChange={setOnlineMatchActive}
-            onExit={() => {
-              setOnlineMatchActive(false);
-              setView({ kind: 'home' });
-            }}
+            defaultReporterName={playerName}
+            onClose={() => setShowReportModal(false)}
           />
         )}
 
-        {view.kind === 'admin' && (
-          <AdminPanel
-            onDataUpdated={() => void fetchCatalogData()}
-            onExit={() => setView({ kind: 'home' })}
+        {maintenanceGame && (
+          <MaintenanceModal
+            game={maintenanceGame}
+            onClose={() => setMaintenanceGame(null)}
           />
         )}
-      </main>
-
-      <Footer onOpenReport={() => setShowReportModal(true)} />
-
-      {/* Zero-Login First-Load Name Onboarding */}
-      {!playerName && <NameOnboardingModal onConfirm={handleSaveName} />}
-
-      {showRulesModal && (
-        <HowToPlayModal
-          games={games}
-          initialGameId={view.kind === 'offline' ? view.game.id : undefined}
-          onClose={() => setShowRulesModal(false)}
-        />
-      )}
-
-      {showReportModal && (
-        <BugReportModal
-          games={games}
-          defaultReporterName={playerName}
-          onClose={() => setShowReportModal(false)}
-        />
-      )}
-
-      {maintenanceGame && (
-        <MaintenanceModal
-          game={maintenanceGame}
-          onClose={() => setMaintenanceGame(null)}
-        />
-      )}
-    </div>
+      </div>
+    </CharacterReactionProvider>
   );
 }

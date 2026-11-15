@@ -28,6 +28,8 @@ import {
 import { ARABIC_LETTERS } from '../../data/huroofBank';
 import { computeIsmScores, pickUnusedArabicLetter } from '../../shared/roomEngine';
 import { SoundFX } from '../../utils/soundFx';
+import { CharacterAvatar } from '../CharacterAvatar';
+import { useCharacterReaction } from '../../context/CharacterReactionContext';
 
 interface IsmHayawanEngineProps {
   mode: 'offline' | 'online';
@@ -72,6 +74,7 @@ export const IsmHayawanEngine: React.FC<IsmHayawanEngineProps> = ({
 }) => {
   const isOnline = mode === 'online' && Boolean(room);
   const ism = room?.ismHayawan;
+  const { triggerReaction } = useCharacterReaction();
 
   // Offline state
   const [offlinePhase, setOfflinePhase] = useState<'lobby' | 'letter_spin' | 'writing' | 'scoring' | 'leaderboard' | 'game_over'>('lobby');
@@ -217,17 +220,38 @@ export const IsmHayawanEngine: React.FC<IsmHayawanEngineProps> = ({
     return () => clearTimeout(t);
   }, [myAnswers, isOnline, phase, isLocalJudge, onSendAction]);
 
-  // Victory confetti
+  // Scoring & Victory reactions
   useEffect(() => {
-    if (phase === 'game_over') {
+    if (phase === 'scoring') {
+      if (isOnline && localPlayerId) {
+        const myRound = roundTotalsMap[localPlayerId] || 0;
+        if (myRound >= 35) {
+          triggerReaction('win', `جولة نار! +${myRound} 🔥`, 2800);
+        } else if (myRound <= 10) {
+          triggerReaction('lose', 'شد حيلك الجاية! 😅', 2400);
+        } else {
+          triggerReaction('excited', `+${myRound} نقطة! 👏`, 2200);
+        }
+      } else {
+        triggerReaction('excited', 'نتائج الجولة! 📊', 2200);
+      }
+    } else if (phase === 'game_over') {
       SoundFX.playVictory();
       void confetti({ particleCount: 95, spread: 80, origin: { y: 0.6 } });
+      const sorted = [...displayPlayers].sort((a, b) => b.score - a.score);
+      const myRank = isOnline && localPlayerId ? sorted.findIndex((p) => p.id === localPlayerId) : 0;
+      if (isOnline && localPlayerId && myRank > Math.max(0, Math.floor(sorted.length / 2))) {
+        triggerReaction('lose', `المركز #${myRank + 1} معوّضة! 😅`, 3400);
+      } else {
+        triggerReaction('win', 'أبطال الحروف! 🏆', 3400);
+      }
     }
-  }, [phase]);
+  }, [phase, activeRoundNum]);
 
   const handleSpinWheel = () => {
     if (isSpinning) return;
     SoundFX.playTileSelect();
+    triggerReaction('excited', 'يدور الحرف! 🎡', 1800);
     setIsSpinning(true);
     let ticks = 0;
     const finalLetter = pickUnusedArabicLetter(isOnline && ism ? ism.usedLetters : usedLetters);
@@ -240,6 +264,7 @@ export const IsmHayawanEngine: React.FC<IsmHayawanEngineProps> = ({
         setSpinPreviewLetter(finalLetter);
         setIsSpinning(false);
         SoundFX.playCorrect();
+        triggerReaction('picking_game', `حرف (${finalLetter})! ✍️`, 2000);
         if (isOnline) {
           onSendAction?.({ type: 'ism_hayawan_set_letter', letter: finalLetter });
         } else {
@@ -284,10 +309,10 @@ export const IsmHayawanEngine: React.FC<IsmHayawanEngineProps> = ({
       isJudgeRoom: offlineIsJudge,
       judgeId: null,
     };
-    const fakePlayers = offlinePlayers.map((p) => ({
+    const fakePlayers = offlinePlayers.map((p, i) => ({
       id: p.id,
       name: p.name,
-      avatar: '🔥',
+      avatar: `char_${String((i % 10) + 1).padStart(2, '0')}`,
       isHost: false,
       isReady: true,
       score: p.score,
@@ -1172,22 +1197,31 @@ export const IsmHayawanEngine: React.FC<IsmHayawanEngineProps> = ({
           <div className="max-w-lg mx-auto space-y-3">
             {[...displayPlayers]
               .sort((a, b) => b.score - a.score)
-              .map((p, idx) => (
-                <div
-                  key={p.id}
-                  className={`flex items-center justify-between px-5 py-3.5 rounded-2xl border-2 ${
-                    idx === 0
-                      ? 'bg-[#FFF3DF] border-[#FFB703] text-[#9A3412]'
-                      : 'bg-[#FFFBF5] border-amber-200 text-[#24141D]'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 font-black">
-                    <span className="text-lg tabular-nums">#{idx + 1}</span>
-                    <span>{p.name}</span>
+              .map((p, idx) => {
+                const avatarId = 'avatar' in p ? (p as { avatar?: string }).avatar : `char_${String((idx % 10) + 1).padStart(2, '0')}`;
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex items-center justify-between px-5 py-3.5 rounded-2xl border-2 ${
+                      idx === 0
+                        ? 'bg-[#FFF3DF] border-[#FFB703] text-[#9A3412]'
+                        : 'bg-[#FFFBF5] border-amber-200 text-[#24141D]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 font-black">
+                      <span className="text-lg tabular-nums">#{idx + 1}</span>
+                      <CharacterAvatar
+                        avatarId={avatarId}
+                        size={38}
+                        mood={idx === 0 ? 'win' : 'idle'}
+                        interactive={false}
+                      />
+                      <span>{p.name}</span>
+                    </div>
+                    <span className="font-black text-lg tabular-nums">{p.score} نقطة</span>
                   </div>
-                  <span className="font-black text-lg tabular-nums">{p.score} نقطة</span>
-                </div>
-              ))}
+                );
+              })}
           </div>
 
           <button

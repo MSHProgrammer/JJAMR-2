@@ -16,8 +16,11 @@ import {
 } from 'lucide-react';
 import { Question, Section, Topic } from '../../types/jamr';
 import { SoundFX } from '../../utils/soundFx';
+import { CharacterAvatar } from '../CharacterAvatar';
+import { useCharacterReaction } from '../../context/CharacterReactionContext';
 
 interface JamrainEngineProps {
+  playerAvatar?: string;
   sections: Section[];
   topics: Topic[];
   questions: Question[];
@@ -62,12 +65,14 @@ const JamrainIllustration: React.FC<{ topic: Topic }> = ({ topic }) => {
 };
 
 export const JamrainEngine: React.FC<JamrainEngineProps> = ({
+  playerAvatar,
   sections,
   topics,
   questions,
   onQuestionsAdded,
   onExit,
 }) => {
+  const { mood, bubbleText, reactionKey, triggerReaction } = useCharacterReaction();
   const [phase, setPhase] = useState<'pick_topics' | 'board' | 'victory'>('pick_topics');
 
   // Teams
@@ -165,9 +170,10 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
     if (phase === 'board' && Object.keys(usedTiles).length >= 36) {
       SoundFX.playVictory();
       void confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
+      triggerReaction('win', 'أبطال جَمْرَيْن! 🏆', 3600);
       setPhase('victory');
     }
-  }, [usedTiles, phase]);
+  }, [usedTiles, phase, triggerReaction]);
 
   const confirmStagedTopic = (topicToLock?: Topic) => {
     const chosen = topicToLock || stagedTopic;
@@ -283,6 +289,7 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
     const pts = activeTile.points;
     if (winner === 1) {
       SoundFX.playCorrect();
+      triggerReaction('win', `نقاط لـ ${team1Name}! 🎉`, 2400);
       if (pitActive) {
         setTeam1Score((s) => s + pts * 2);
         setTeam2Score((s) => Math.max(0, s - pts));
@@ -291,6 +298,7 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
       }
     } else if (winner === 2) {
       SoundFX.playCorrect();
+      triggerReaction('win', `نقاط لـ ${team2Name}! 🎉`, 2400);
       if (pitActive) {
         setTeam2Score((s) => s + pts * 2);
         setTeam1Score((s) => Math.max(0, s - pts));
@@ -299,6 +307,7 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
       }
     } else {
       SoundFX.playWrong();
+      triggerReaction('lose', 'راحت عليكم! 😅', 2200);
     }
 
     setUsedTiles((prev) => ({ ...prev, [activeTile.tileKey]: winner }));
@@ -338,6 +347,14 @@ export const JamrainEngine: React.FC<JamrainEngineProps> = ({
           >
             ✕
           </button>
+          <CharacterAvatar
+            avatarId={playerAvatar}
+            size={40}
+            mood={mood}
+            reactionKey={reactionKey}
+            bubbleText={bubbleText}
+            showBubble
+          />
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide">جَمْرَيْن 🔥</h1>
         </div>
 

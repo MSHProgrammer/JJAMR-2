@@ -12,10 +12,15 @@ import {
 } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
 import { JamrFlameLogo, FestiveGarlandStrip } from './FestiveDecor';
+import { CharacterAvatar } from './CharacterAvatar';
+import { useCharacterReaction } from '../context/CharacterReactionContext';
+import { CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
 
 interface HeaderProps {
   playerName: string;
+  playerAvatar: string;
   onUpdatePlayerName: (name: string) => void;
+  onUpdatePlayerAvatar: (avatarId: string) => void;
   isInMatch: boolean;
   isHome: boolean;
   onGoHome: () => void;
@@ -26,7 +31,9 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   playerName,
+  playerAvatar,
   onUpdatePlayerName,
+  onUpdatePlayerAvatar,
   isInMatch,
   isHome,
   onGoHome,
@@ -35,13 +42,18 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdmin,
 }) => {
   const [editingName, setEditingName] = useState(false);
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [draftName, setDraftName] = useState(playerName);
   const [soundOn, setSoundOn] = useState(() => SoundFX.isEnabled());
+
+  const { mood, bubbleText, reactionKey, triggerReaction } = useCharacterReaction();
+  const avatarInfo = resolveCharacterAvatar(playerAvatar);
 
   const saveName = () => {
     const cleaned = draftName.trim().slice(0, 15);
     if (cleaned.length >= 2) {
       onUpdatePlayerName(cleaned);
+      triggerReaction('excited', `عاشت الأسامي يا ${cleaned}! ✨`, 2000);
     } else {
       setDraftName(playerName);
     }
@@ -76,12 +88,33 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </button>
 
-        {/* Center Zone: Active Match Indicator or Editable Name */}
-        <div className="flex items-center justify-center min-w-0">
+        {/* Center Zone: Reactive Character Companion + Match / Name */}
+        <div className="relative flex items-center justify-center gap-2 min-w-0">
+          {/* Interactive Reactive Character */}
+          <button
+            type="button"
+            onClick={() => {
+              SoundFX.playClick();
+              setShowAvatarMenu((s) => !s);
+            }}
+            title={`شخصيتك: ${avatarInfo.name} — اضغط للتغيير`}
+            className="cursor-pointer rounded-full focus:outline-none"
+          >
+            <CharacterAvatar
+              avatarId={playerAvatar}
+              size={40}
+              mood={mood}
+              reactionKey={reactionKey}
+              bubbleText={bubbleText}
+              showBubble
+            />
+          </button>
+
           {isInMatch ? (
             <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs sm:text-sm font-black whitespace-nowrap shadow-sm">
               <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>مباراة جارية 🔥</span>
+              <span className="hidden xs:inline">مباراة جارية 🔥</span>
+              <span className="xs:hidden">مباراة 🔥</span>
             </div>
           ) : editingName ? (
             <div className="flex items-center gap-1.5 bg-white border-2 border-orange-400 rounded-full px-3 py-1 shadow-sm">
@@ -92,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && saveName()}
-                className="w-28 sm:w-36 bg-transparent text-[#23140E] text-xs sm:text-sm font-bold focus:outline-none"
+                className="w-24 sm:w-36 bg-transparent text-[#23140E] text-xs sm:text-sm font-bold focus:outline-none"
               />
               <button
                 onClick={saveName}
@@ -109,12 +142,52 @@ export const Header: React.FC<HeaderProps> = ({
                 setEditingName(true);
                 SoundFX.playClick();
               }}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-bold text-[#23140E] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-bold text-[#23140E] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
               title="تعديل الاسم"
             >
-              <span className="truncate max-w-[120px] sm:max-w-[180px]">{playerName || 'لاعب جَمْر'}</span>
+              <span className="truncate max-w-[100px] sm:max-w-[160px]">{playerName || 'لاعب جَمْر'}</span>
               <Pencil className="w-3.5 h-3.5 text-orange-500 shrink-0" />
             </button>
+          )}
+
+          {/* Quick Character Switcher Popover */}
+          {showAvatarMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowAvatarMenu(false)}
+              />
+              <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 w-72 rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-black text-[#23140E]">
+                  <span>اختر شخصيتك 🎨</span>
+                  <span className="text-orange-600">{avatarInfo.name}</span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {CHARACTER_AVATARS.map((char) => (
+                    <button
+                      key={char.id}
+                      type="button"
+                      onClick={() => {
+                        SoundFX.playTileSelect();
+                        onUpdatePlayerAvatar(char.id);
+                        setShowAvatarMenu(false);
+                        triggerReaction('excited', `أهلاً أنا ${char.name}! 🔥`, 2000);
+                      }}
+                      className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
+                        playerAvatar === char.id
+                          ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                          : 'hover:bg-[#FFF8EE]'
+                      }`}
+                    >
+                      <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
+                      <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
+                        {char.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
 

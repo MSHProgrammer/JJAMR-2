@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { RoomState } from '../../types/jamr';
 import { SoundFX } from '../../utils/soundFx';
+import { useCharacterReaction } from '../../context/CharacterReactionContext';
 
 interface MafiaNoHakamEngineProps {
   mode: 'offline' | 'online';
@@ -64,6 +65,7 @@ export const MafiaNoHakamEngine: React.FC<MafiaNoHakamEngineProps> = ({
 }) => {
   const isOnline = mode === 'online' && Boolean(room);
   const mf = room?.mafia;
+  const { triggerReaction } = useCharacterReaction();
 
   const [offlinePhase, setOfflinePhase] = useState<
     'setup' | 'role_reveal' | 'night' | 'day_announcement' | 'day_discussion' | 'day_voting' | 'game_over'
@@ -115,11 +117,23 @@ export const MafiaNoHakamEngine: React.FC<MafiaNoHakamEngineProps> = ({
   }, [activePhase]);
 
   useEffect(() => {
-    if (activePhase === 'game_over') {
+    if (activePhase === 'day_announcement') {
+      triggerReaction('shocked', 'أشرق الصباح! 🌅', 2200);
+    } else if (activePhase === 'game_over') {
       SoundFX.playVictory();
       void confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 } });
+      const activeWin = isOnline && mf ? mf.winner : offlineWinner;
+      const myRole = isOnline && mf && localPlayerId ? mf.rolesByPlayer[localPlayerId] : null;
+      if (isOnline && myRole) {
+        const iWon =
+          (myRole === 'mafia' && activeWin === 'mafia') ||
+          (myRole !== 'mafia' && activeWin === 'citizens');
+        triggerReaction(iWon ? 'win' : 'lose', iWon ? 'انتصرنا! 🏆' : 'هاردلك! 😅', 3400);
+      } else {
+        triggerReaction('win', activeWin === 'citizens' ? 'فاز المواطنون! 🎉' : 'فازت المافيا! 🕶️', 3200);
+      }
     }
-  }, [activePhase]);
+  }, [activePhase, isOnline, mf, offlineWinner, localPlayerId, triggerReaction]);
 
   const startOfflineMafia = () => {
     if (offlinePlayers.length < 3) return;

@@ -1298,7 +1298,7 @@ wss.on('connection', (ws) => {
         code = generateRoomCode();
       }
       const playerName = sanitizeText(String(data.playerName || 'المضيف'), 30) || 'المضيف';
-      const avatar = sanitizeText(String(data.avatar || '🔥'), 12) || '🔥';
+      const avatar = sanitizeText(String(data.avatar || 'char_01'), 16) || 'char_01';
       const isJudgeRoom = Boolean(data.isJudgeRoom) && gameId === 'ism_hayawan';
       const totalRounds = Math.max(1, Math.min(50, Number(data.totalRounds) || 5));
 
@@ -1359,7 +1359,7 @@ wss.on('connection', (ws) => {
           return;
         }
         const playerName = sanitizeText(String(data.playerName || 'ضيف'), 30) || 'ضيف';
-        const avatar = sanitizeText(String(data.avatar || '⚡'), 12) || '⚡';
+        const avatar = sanitizeText(String(data.avatar || 'char_04'), 16) || 'char_04';
         room.players.push({
           id: incomingId,
           name: playerName,

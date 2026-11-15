@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { ARABIC_LETTERS, HUROOF_DEFAULT_BANK, HuroofQuestion } from '../../data/huroofBank';
 import { SoundFX } from '../../utils/soundFx';
+import { useCharacterReaction } from '../../context/CharacterReactionContext';
 
 interface HuroofJamrEngineProps {
   onExit: () => void;
@@ -107,6 +108,7 @@ function createShuffledGrid(): HexCell[][] {
 }
 
 export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) => {
+  const { triggerReaction } = useCharacterReaction();
   const [grid, setGrid] = useState<HexCell[][]>(() => createShuffledGrid());
   const [greenName, setGreenName] = useState('الفريق الأخضر');
   const [orangeName, setOrangeName] = useState('الفريق البرتقالي');
@@ -172,9 +174,13 @@ export const HuroofJamrEngine: React.FC<HuroofJamrEngineProps> = ({ onExit }) =>
         else setOrangeRounds((s) => s + 1);
         SoundFX.playVictory();
         void confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
+        triggerReaction('win', 'أبطال المسار! 🐝👑', 3200);
+      } else {
+        triggerReaction('excited', 'خلية جديدة! 🔥', 1500);
       }
     } else {
       SoundFX.playWrong();
+      triggerReaction('lose', 'طارت الخلية! 😅', 1800);
     }
   };
 

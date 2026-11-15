@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { BarrahCategory, RoomState } from '../../types/jamr';
 import { SoundFX } from '../../utils/soundFx';
+import { useCharacterReaction } from '../../context/CharacterReactionContext';
 
 interface BarrahSalfaEngineProps {
   mode: 'offline' | 'online';
@@ -38,6 +39,7 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
 }) => {
   const isOnline = mode === 'online' && Boolean(room);
   const br = room?.barrah;
+  const { triggerReaction } = useCharacterReaction();
 
   // Offline setup & states
   const [offlinePhase, setOfflinePhase] = useState<
@@ -116,11 +118,29 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
   }, [activePhase, isOnline]);
 
   useEffect(() => {
-    if (activePhase === 'results') {
+    if (activePhase === 'final_chance') {
+      triggerReaction('shocked', 'انكشف الجاسوس! 🕵️', 2800);
+    } else if (activePhase === 'results') {
       SoundFX.playVictory();
       void confetti({ particleCount: 85, spread: 75, origin: { y: 0.6 } });
+      const activeWinner = isOnline && br ? br.winner : offlineWinner;
+      const amISpy = isOnline && localPlayerId ? activeSpyId === localPlayerId : false;
+      if (isOnline && localPlayerId) {
+        const iWon = (amISpy && activeWinner === 'spy') || (!amISpy && activeWinner === 'insiders');
+        triggerReaction(
+          iWon ? 'win' : 'lose',
+          iWon ? 'كسبنا السالفة! 🎉' : amISpy ? 'انكشفت 😅' : 'ضحك علينا! 😂',
+          3400
+        );
+      } else {
+        triggerReaction(
+          activeWinner === 'insiders' ? 'win' : 'shocked',
+          activeWinner === 'insiders' ? 'تم القبض على الجاسوس! 🎉' : 'فلت الجاسوس! 🕵️',
+          3200
+        );
+      }
     }
-  }, [activePhase]);
+  }, [activePhase, isOnline, br, offlineWinner, activeSpyId, localPlayerId, triggerReaction]);
 
   const startOfflineGame = () => {
     if (offlinePlayers.length < 3 || categories.length === 0) return;

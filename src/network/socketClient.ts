@@ -120,7 +120,7 @@ export class JamrSocketClient {
           try {
             const savedRoom = window.sessionStorage.getItem('jamr_active_room');
             const savedName = window.localStorage.getItem('jamr_player_name');
-            const savedAvatar = window.localStorage.getItem('jamr_player_avatar') || '🔥';
+            const savedAvatar = window.localStorage.getItem('jamr_player_avatar') || 'char_01';
             if (savedRoom && savedName) {
               this.currentRoomCode = savedRoom;
               this.send({

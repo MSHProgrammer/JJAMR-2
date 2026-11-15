@@ -31,6 +31,7 @@ import {
   BROKEN_TV_STARTER_PROMPTS,
 } from '../../data/brokenTvPrompts';
 import { SoundFX } from '../../utils/soundFx';
+import { useCharacterReaction } from '../../context/CharacterReactionContext';
 
 interface BrokenTvEngineProps {
   mode: 'offline' | 'online';
@@ -83,6 +84,7 @@ export const BrokenTvEngine: React.FC<BrokenTvEngineProps> = ({
 }) => {
   const isOnline = mode === 'online' && Boolean(room);
   const bt = room?.brokenTv;
+  const { triggerReaction } = useCharacterReaction();
 
   // Offline local state
   const [offlinePhase, setOfflinePhase] = useState<BrokenTvPhase>('home');
@@ -179,13 +181,16 @@ export const BrokenTvEngine: React.FC<BrokenTvEngineProps> = ({
     setRedoStack([]);
   }, [activePhase, offlineStep, offlinePlayerTurn, offlinePassReady]);
 
-  // Confetti on Podium
+  // Confetti + character celebration on Podium & phase transitions
   useEffect(() => {
     if (activePhase === 'podium') {
       SoundFX.playVictory();
       void confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
+      triggerReaction('win', 'نجوم الشاشة! 🏆', 3400);
+    } else if (activePhase === 'reveal') {
+      triggerReaction('excited', 'شوفوا الإبداع! 😂', 2400);
     }
-  }, [activePhase]);
+  }, [activePhase, triggerReaction]);
 
   const getPointerPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;

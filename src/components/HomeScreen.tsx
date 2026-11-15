@@ -17,11 +17,16 @@ import { motion } from 'motion/react';
 import { GameConfig } from '../types/jamr';
 import { SoundFX } from '../utils/soundFx';
 import { FestiveHeroArtwork } from './FestiveDecor';
+import { CharacterAvatar } from './CharacterAvatar';
+import { useCharacterReaction } from '../context/CharacterReactionContext';
+import { CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
 
 interface HomeScreenProps {
   games: GameConfig[];
   playerName: string;
+  playerAvatar: string;
   onUpdatePlayerName: (name: string) => void;
+  onUpdatePlayerAvatar: (avatarId: string) => void;
   onSelectOfflineGame: (game: GameConfig) => void;
   onSelectOnlineCreate: (gameId?: string) => void;
   onSelectOnlineJoin: () => void;
@@ -31,7 +36,9 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   games,
   playerName,
+  playerAvatar,
   onUpdatePlayerName,
+  onUpdatePlayerAvatar,
   onSelectOfflineGame,
   onSelectOnlineCreate,
   onSelectOnlineJoin,
@@ -39,8 +46,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
   const [filter, setFilter] = useState<'all' | 'offline' | 'online'>('all');
   const [editingHeroName, setEditingHeroName] = useState(false);
+  const [showAvatarDrawer, setShowAvatarDrawer] = useState(false);
   const [draftName, setDraftName] = useState(playerName);
   const [modePickerGame, setModePickerGame] = useState<GameConfig | null>(null);
+
+  const { mood, bubbleText, reactionKey, triggerReaction } = useCharacterReaction();
+  const avatarInfo = resolveCharacterAvatar(playerAvatar);
 
   const filteredGames = games.filter((g) => {
     if (filter === 'offline') return g.supportsOffline;
@@ -51,9 +62,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const handleCardClick = (game: GameConfig) => {
     SoundFX.playClick();
     if (game.underMaintenance || !game.isActive) {
+      triggerReaction('shocked', 'تحت الصيانة 🔧', 2000);
       onShowMaintenance(game);
       return;
     }
+    triggerReaction('picking_game', `اخترنا ${game.title}! 🎮`, 2400);
     if (game.supportsOffline && game.supportsOnline) {
       setModePickerGame(game);
       return;
@@ -69,6 +82,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const cleaned = draftName.trim().slice(0, 15);
     if (cleaned.length >= 2) {
       onUpdatePlayerName(cleaned);
+      triggerReaction('excited', `حياك يا ${cleaned}! 🔥`, 2200);
     } else {
       setDraftName(playerName);
     }
@@ -91,19 +105,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             </div>
 
-            <h1 className="text-3xl sm:text-5xl font-black text-[#23140E] leading-tight [text-wrap:balance]">
-              حيّاك يا{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-l from-orange-600 via-red-500 to-amber-500">
-                {playerName}
-              </span>
-              ، جاهز تولّع جمعتكم؟
-            </h1>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  SoundFX.playTileSelect();
+                  setShowAvatarDrawer((v) => !v);
+                  triggerReaction('excited', `${avatarInfo.name} جاهز! ✨`, 1800);
+                }}
+                title="اضغط لتغيير شخصيتك"
+                className="cursor-pointer shrink-0 focus:outline-none"
+              >
+                <CharacterAvatar
+                  avatarId={playerAvatar}
+                  size={74}
+                  mood={mood}
+                  reactionKey={reactionKey}
+                  bubbleText={bubbleText}
+                  showBubble
+                />
+              </button>
+              <h1 className="text-3xl sm:text-5xl font-black text-[#23140E] leading-tight [text-wrap:balance]">
+                حيّاك يا{' '}
+                <span className="text-transparent bg-clip-text bg-gradient-to-l from-orange-600 via-red-500 to-amber-500">
+                  {playerName}
+                </span>
+                ، جاهز تولّع جمعتكم؟
+              </h1>
+            </div>
 
             <p className="text-sm sm:text-base text-[#5A3E32] font-readex leading-relaxed">
               منصة جَمْر تجمع أمتع الألعاب الجماعية العربية في مكان واحد بأجواء احتفالية — سواء كنتم حول جهاز واحد في المجلس أو كل واحد من جواله أونلاين!
             </p>
 
-            {/* Quick Name Editor + Festive Stats */}
+            {/* Quick Name & Character Editor + Festive Stats */}
             <div className="pt-1 flex flex-wrap items-center gap-3">
               {editingHeroName ? (
                 <div className="flex items-center gap-2 bg-white border-2 border-orange-400 rounded-xl px-3 py-1.5 shadow-sm">
@@ -138,6 +173,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </button>
               )}
 
+              <button
+                type="button"
+                onClick={() => {
+                  SoundFX.playClick();
+                  setShowAvatarDrawer((v) => !v);
+                }}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-extrabold text-orange-700 cursor-pointer shadow-xs transition-colors"
+              >
+                <CharacterAvatar avatarId={playerAvatar} size={24} interactive={false} />
+                <span>شخصيتك: {avatarInfo.name}</span>
+              </button>
+
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-3 py-2 rounded-xl bg-white/80 border border-amber-200 text-xs font-black text-orange-700">
                   🎯 7 ألعاب جماعية
@@ -150,6 +197,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </span>
               </div>
             </div>
+
+            {showAvatarDrawer && (
+              <div className="p-3.5 rounded-2xl bg-white/95 border-2 border-amber-300 shadow-lg grid grid-cols-5 sm:grid-cols-10 gap-2">
+                {CHARACTER_AVATARS.map((char) => (
+                  <button
+                    key={char.id}
+                    type="button"
+                    onClick={() => {
+                      SoundFX.playTileSelect();
+                      onUpdatePlayerAvatar(char.id);
+                      setShowAvatarDrawer(false);
+                      triggerReaction('excited', `تم اختيار ${char.name}! 🎉`, 2200);
+                    }}
+                    className={`flex flex-col items-center gap-1 p-1.5 rounded-xl cursor-pointer transition-all ${
+                      playerAvatar === char.id
+                        ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                        : 'hover:bg-[#FFF8EE]'
+                    }`}
+                  >
+                    <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
+                    <span className="text-[10px] font-black text-[#23140E] truncate max-w-full">
+                      {char.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Festive Hero SVG Illustration */}
@@ -166,6 +240,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           whileTap={{ scale: 0.99 }}
           onClick={() => {
             SoundFX.playTileSelect();
+            triggerReaction('picking_game', 'يلا أوفلاين! 📱', 2200);
             setFilter('offline');
             const firstOffline = games.find((g) => g.supportsOffline && g.isActive && !g.underMaintenance);
             if (firstOffline) onSelectOfflineGame(firstOffline);
@@ -189,6 +264,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           whileTap={{ scale: 0.99 }}
           onClick={() => {
             SoundFX.playTileSelect();
+            triggerReaction('picking_game', 'غرفة أونلاين! 🌐', 2200);
             onSelectOnlineCreate('broken_tv');
           }}
           className="text-right group rounded-2xl bg-white hover:bg-[#FFFDF9] border-2 border-orange-200/80 hover:border-orange-400 p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-4"
@@ -210,6 +286,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           whileTap={{ scale: 0.99 }}
           onClick={() => {
             SoundFX.playTileSelect();
+            triggerReaction('excited', 'ندخل برمز الدعوة! 🔑', 2200);
             onSelectOnlineJoin();
           }}
           className="text-right group rounded-2xl bg-white hover:bg-[#FFFDF9] border-2 border-teal-200/80 hover:border-teal-400 p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between gap-4"
