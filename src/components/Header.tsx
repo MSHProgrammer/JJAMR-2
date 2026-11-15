@@ -97,7 +97,11 @@ export const Header: React.FC<HeaderProps> = ({
               SoundFX.playClick();
               setShowAvatarMenu((s) => !s);
             }}
-            title={`شخصيتك: ${avatarInfo.name} — اضغط للتغيير`}
+            title={
+              avatarInfo.name.trim()
+                ? `شخصيتك: ${avatarInfo.name.trim()} — اضغط للتغيير`
+                : `شخصيتك (${avatarInfo.tagline}) — اضغط للتغيير`
+            }
             className="cursor-pointer rounded-full focus:outline-none"
           >
             <CharacterAvatar
@@ -160,31 +164,41 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 w-72 rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-black text-[#23140E]">
                   <span>اختر شخصيتك 🎨</span>
-                  <span className="text-orange-600">{avatarInfo.name}</span>
+                  <span className="text-orange-600">{avatarInfo.name.trim() || avatarInfo.tagline}</span>
                 </div>
                 <div className="grid grid-cols-5 gap-2">
-                  {CHARACTER_AVATARS.map((char) => (
-                    <button
-                      key={char.id}
-                      type="button"
-                      onClick={() => {
-                        SoundFX.playTileSelect();
-                        onUpdatePlayerAvatar(char.id);
-                        setShowAvatarMenu(false);
-                        triggerReaction('excited', `أهلاً أنا ${char.name}! 🔥`, 2000);
-                      }}
-                      className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
-                        playerAvatar === char.id
-                          ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
-                          : 'hover:bg-[#FFF8EE]'
-                      }`}
-                    >
-                      <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
-                      <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
-                        {char.name}
-                      </span>
-                    </button>
-                  ))}
+                  {CHARACTER_AVATARS.map((char) => {
+                    const cleanLabel = char.name.trim();
+                    return (
+                      <button
+                        key={char.id}
+                        type="button"
+                        onClick={() => {
+                          SoundFX.playTileSelect();
+                          onUpdatePlayerAvatar(char.id);
+                          setShowAvatarMenu(false);
+                          triggerReaction(
+                            'excited',
+                            cleanLabel ? `أهلاً أنا ${cleanLabel}! 🔥` : `${char.tagline}! 🔥`,
+                            2000
+                          );
+                        }}
+                        title={cleanLabel || char.tagline}
+                        className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
+                          playerAvatar === char.id
+                            ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                            : 'hover:bg-[#FFF8EE]'
+                        }`}
+                      >
+                        <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
+                        {cleanLabel && (
+                          <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
+                            {cleanLabel}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </>

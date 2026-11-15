@@ -148,13 +148,36 @@ export function computeIsmScores(state: IsmHayawanState, players: Player[]): {
   return { fieldScoresByPlayer, roundTotalsByPlayer, reasonsByPlayer };
 }
 
+export function startBarrahCategoryVote(room: RoomState): RoomState {
+  return {
+    ...room,
+    status: 'playing',
+    barrah: {
+      phase: 'category_vote',
+      categoryId: '',
+      categoryName: '',
+      categoryVotesByVoter: {},
+      secretWord: '',
+      distractorWords: [],
+      spyId: '',
+      askerId: '',
+      answererId: '',
+      votesByVoter: {},
+      revealedPlayerIds: [],
+      spyGuess: null,
+      spyGuessDeadline: null,
+      winner: null,
+    },
+  };
+}
+
 export function startBarrahOnlineRound(
   room: RoomState,
   categoryId: string,
   categories: BarrahCategory[] = DEFAULT_BARRAH_CATEGORIES
 ): RoomState {
   const pool =
-    categoryId === 'random_all'
+    !categoryId || categoryId === 'random_all'
       ? categories
       : categories.filter((c) => c.id === categoryId);
   const chosenCat =
@@ -181,7 +204,8 @@ export function startBarrahOnlineRound(
     .slice(0, 10)
     .sort(() => Math.random() - 0.5);
 
-  const players = room.players.filter((p) => p.connected);
+  const connectedPlayers = room.players.filter((p) => p.connected);
+  const players = connectedPlayers.length > 0 ? connectedPlayers : room.players;
   const spy = players[Math.floor(Math.random() * players.length)] || room.players[0];
   const pair = [...players].sort(() => Math.random() - 0.5);
   const asker = pair[0] || spy;
@@ -194,6 +218,7 @@ export function startBarrahOnlineRound(
       phase: 'reveal_cards',
       categoryId: chosenCat.id,
       categoryName: chosenCat.name,
+      categoryVotesByVoter: room.barrah?.categoryVotesByVoter || {},
       secretWord,
       distractorWords,
       spyId: spy.id,
@@ -206,6 +231,56 @@ export function startBarrahOnlineRound(
       winner: null,
     },
   };
+}
+
+export function finalizeBarrahCategoryVote(
+  room: RoomState,
+  categories: BarrahCategory[] = DEFAULT_BARRAH_CATEGORIES
+): RoomState {
+  if (!room.barrah) return room;
+  const votes = room.barrah.categoryVotesByVoter || {};
+  const counts: Record<string, number> = {};
+  Object.values(votes).forEach((catId) => {
+    if (catId) counts[catId] = (counts[catId] || 0) + 1;
+  });
+  const entries = Object.entries(counts);
+  let winningCategoryId = 'random_all';
+  if (entries.length > 0) {
+    const maxCount = Math.max(...entries.map(([, c]) => c));
+    const tied = entries.filter(([, c]) => c === maxCount).map(([id]) => id);
+    winningCategoryId = tied[Math.floor(Math.random() * tied.length)] || 'random_all';
+  }
+  return startBarrahOnlineRound(room, winningCategoryId, categories);
+}
+
+export function applyBarrahCategoryVote(
+  room: RoomState,
+  playerId: string,
+  categoryId: string,
+  categories: BarrahCategory[] = DEFAULT_BARRAH_CATEGORIES
+): RoomState {
+  if (!room.barrah || room.barrah.phase !== 'category_vote') return room;
+  const validCat = categoryId === 'random_all' || categories.some((c) => c.id === categoryId);
+  if (!validCat) return room;
+
+  const categoryVotesByVoter = {
+    ...(room.barrah.categoryVotesByVoter || {}),
+    [playerId]: categoryId,
+  };
+  const updatedRoom: RoomState = {
+    ...room,
+    barrah: {
+      ...room.barrah,
+      categoryVotesByVoter,
+    },
+  };
+
+  const activePlayers = room.players.filter((p) => p.connected);
+  const needed = Math.max(1, activePlayers.length || room.players.length);
+  if (Object.keys(categoryVotesByVoter).length >= needed) {
+    return finalizeBarrahCategoryVote(updatedRoom, categories);
+  }
+  return updatedRoom;
 }
 
 export function startMafiaOnlineRound(room: RoomState): RoomState {

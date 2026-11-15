@@ -46,7 +46,11 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
               mood="excited"
               reactionKey={previewKey}
               showBubble
-              bubbleText={`أهلاً! أنا ${selectedInfo.name} 👋`}
+              bubbleText={
+                selectedInfo.name.trim()
+                  ? `أهلاً! أنا ${selectedInfo.name.trim()} 👋`
+                  : `أهلاً بك! (${selectedInfo.tagline}) 👋`
+              }
             />
           </div>
           <h2 className="text-2xl font-black text-[#23140E] mb-1">أهلاً بك في جَمْر 🔥</h2>
@@ -81,13 +85,16 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
                 اختر شخصيتك المفضلة:
               </label>
               <span className="text-[11px] font-black text-[#5A3E32] bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                {selectedInfo.name} · {selectedInfo.tagline}
+                {selectedInfo.name.trim()
+                  ? `${selectedInfo.name.trim()} · ${selectedInfo.tagline}`
+                  : selectedInfo.tagline}
               </span>
             </div>
 
             <div className="grid grid-cols-5 gap-2.5 p-3 rounded-2xl bg-[#FFF8EE] border border-amber-200">
               {CHARACTER_AVATARS.map((char) => {
                 const isSelected = selectedAvatar === char.id;
+                const cleanLabel = char.name.trim();
                 return (
                   <button
                     key={char.id}
@@ -97,7 +104,7 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
                       setSelectedAvatar(char.id);
                       setPreviewKey((k) => k + 1);
                     }}
-                    title={`${char.name} (${char.tagline})`}
+                    title={cleanLabel ? `${cleanLabel} (${char.tagline})` : char.tagline}
                     className={`flex flex-col items-center gap-1 p-1.5 rounded-2xl transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-white ring-2 ring-orange-500 shadow-md scale-105'
@@ -110,9 +117,11 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
                       mood={isSelected ? 'picking_game' : 'idle'}
                       interactive={false}
                     />
-                    <span className="text-[10px] font-black text-[#23140E] truncate max-w-full">
-                      {char.name}
-                    </span>
+                    {cleanLabel && (
+                      <span className="text-[10px] font-black text-[#23140E] truncate max-w-full">
+                        {cleanLabel}
+                      </span>
+                    )}
                   </button>
                 );
               })}

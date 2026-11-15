@@ -43,7 +43,7 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
 
   // Offline setup & states
   const [offlinePhase, setOfflinePhase] = useState<
-    'setup' | 'reveal_cards' | 'questions_stage' | 'voting_pass' | 'final_chance' | 'results'
+    'setup' | 'category_vote' | 'reveal_cards' | 'questions_stage' | 'voting_pass' | 'final_chance' | 'results'
   >('setup');
   const [offlinePlayers, setOfflinePlayers] = useState<Array<{ id: string; name: string }>>([
     { id: 'b1', name: playerName || 'اللاعب 1' },
@@ -51,7 +51,8 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
     { id: 'b3', name: 'اللاعب 3' },
   ]);
   const [newPlayerName, setNewPlayerName] = useState('');
-  const [selectedCatId, setSelectedCatId] = useState<string>('random_all');
+  const [voteCatTurnIdx, setVoteCatTurnIdx] = useState(0);
+  const [offlineCategoryVotes, setOfflineCategoryVotes] = useState<Record<string, string>>({});
 
   const [secretWord, setSecretWord] = useState('');
   const [categoryName, setCategoryName] = useState('');
@@ -142,13 +143,13 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
     }
   }, [activePhase, isOnline, br, offlineWinner, activeSpyId, localPlayerId, triggerReaction]);
 
-  const startOfflineGame = () => {
+  const startOfflineWithCategory = (chosenCatId: string) => {
     if (offlinePlayers.length < 3 || categories.length === 0) return;
     SoundFX.playTileSelect();
     const pool =
-      selectedCatId === 'random_all'
+      chosenCatId === 'random_all'
         ? categories
-        : categories.filter((c) => c.id === selectedCatId);
+        : categories.filter((c) => c.id === chosenCatId);
     const chosenCat = pool[Math.floor(Math.random() * pool.length)] || categories[0];
 
     // Pick strictly from the active category's words (10 related options total)
@@ -184,6 +185,28 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
     setOfflineWinner(null);
     setSpyGuessWord(null);
     setOfflinePhase('reveal_cards');
+  };
+
+  const castOfflineCategoryVote = (catId: string) => {
+    SoundFX.playClick();
+    const voter = offlinePlayers[voteCatTurnIdx];
+    const nextVotes = voter ? { ...offlineCategoryVotes, [voter.id]: catId } : { ...offlineCategoryVotes };
+    setOfflineCategoryVotes(nextVotes);
+    if (voteCatTurnIdx + 1 < offlinePlayers.length) {
+      setVoteCatTurnIdx(voteCatTurnIdx + 1);
+      return;
+    }
+    const tally: Record<string, number> = {};
+    Object.values(nextVotes).forEach((id) => {
+      tally[id] = (tally[id] || 0) + 1;
+    });
+    const maxCount = Math.max(0, ...Object.values(tally));
+    const tiedTop = Object.entries(tally)
+      .filter(([, count]) => count === maxCount)
+      .map(([id]) => id);
+    const winningCatId =
+      tiedTop.length > 0 ? tiedTop[Math.floor(Math.random() * tiedTop.length)] : 'random_all';
+    startOfflineWithCategory(winningCatId);
   };
 
   const spinOfflinePair = () => {
@@ -320,60 +343,197 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
             </div>
           )}
 
-          {/* Categories Picker */}
-          <div className="space-y-3">
-            <h2 className="text-lg font-black text-[#24141D]">اختر القسم ({categories.length} قسم متاح)</h2>
-            <button
-              onClick={() => {
-                SoundFX.playClick();
-                setSelectedCatId('random_all');
-              }}
-              className={`w-full p-4 rounded-2xl border-2 text-right transition-all cursor-pointer flex items-center justify-between ${
-                selectedCatId === 'random_all'
-                  ? 'bg-[#FFF3DF] border-[#FF6B00] text-[#24141D]'
-                  : 'bg-[#FFFBF5] border-amber-200/80 text-[#5C4350] hover:border-amber-300'
-              }`}
-            >
-              <div>
-                <div className="font-black text-base">🎲 عشوائي من جميع الأقسام</div>
-                <div className="text-xs text-[#6B4F5E] font-readex mt-0.5">
-                  يختار النظام قسماً وكلمة سرية مفاجئة مع 10 خيارات من نفس القسم
-                </div>
-              </div>
-              {selectedCatId === 'random_all' && <span className="text-[#FF6B00] font-black text-xs">مختار ✅</span>}
-            </button>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-80 overflow-y-auto pr-1">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => {
-                    SoundFX.playClick();
-                    setSelectedCatId(cat.id);
-                  }}
-                  className={`p-3.5 rounded-2xl border-2 text-right transition-all cursor-pointer ${
-                    selectedCatId === cat.id
-                      ? 'bg-[#FFF3DF] border-[#FF6B00] text-[#24141D]'
-                      : 'bg-[#FFFBF5] border-amber-200/70 text-[#4A3240] hover:bg-[#FFF8EE]'
-                  }`}
-                >
-                  <div className="font-black text-sm flex items-center gap-2">
-                    <span>{cat.icon}</span>
-                    <span>{cat.name}</span>
-                  </div>
-                  <p className="text-[11px] text-[#6B4F5E] font-readex mt-1">{cat.description}</p>
-                </button>
-              ))}
-            </div>
+          <div className="p-4 rounded-2xl bg-[#FFF8EE] border border-amber-200 text-xs sm:text-sm font-bold text-[#5C4350]">
+            🗳️ بعد الدخول للعبة سيصوّت جميع اللاعبين على موضوع السالفة معاً قبل توزيع البطاقات!
           </div>
 
           <button
             disabled={offlinePlayers.length < 3}
-            onClick={startOfflineGame}
-            className="w-full py-4 rounded-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] hover:opacity-95 text-white font-black text-lg shadow-lg shadow-orange-500/20 cursor-pointer"
+            onClick={() => {
+              SoundFX.playTileSelect();
+              setOfflineCategoryVotes({});
+              setVoteCatTurnIdx(0);
+              setOfflinePhase('category_vote');
+            }}
+            className="w-full py-4 rounded-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] hover:opacity-95 disabled:opacity-45 text-white font-black text-lg shadow-lg shadow-orange-500/20 cursor-pointer"
           >
-            ابدأ توزيع البطاقات 🕵️
+            دخول اللعبة والتصويت على السالفة 🕵️
           </button>
+        </div>
+      )}
+
+      {/* PHASE 1.5: CATEGORY VOTE (Both Online & Offline — inside the game!) */}
+      {activePhase === 'category_vote' && (
+        <div className="rounded-3xl bg-white border-2 border-amber-200 p-6 sm:p-8 space-y-6 shadow-[0_12px_32px_rgba(255,107,0,0.1)]">
+          {(() => {
+            const votesMap: Record<string, string> = isOnline
+              ? (br?.categoryVotesByVoter || {})
+              : offlineCategoryVotes;
+            const myVote = isOnline ? votesMap[localPlayerId || ''] : undefined;
+            const activeOnlineCount = isOnline
+              ? Math.max(1, displayPlayers.filter((p) => 'connected' in p ? p.connected : true).length || displayPlayers.length)
+              : offlinePlayers.length;
+            const totalVoted = Object.keys(votesMap).length;
+
+            const votersByCat: Record<string, string[]> = {};
+            Object.entries(votesMap).forEach(([pid, catId]) => {
+              const pName = displayPlayers.find((p) => p.id === pid)?.name || 'لاعب';
+              votersByCat[catId] = [...(votersByCat[catId] || []), pName];
+            });
+
+            return (
+              <>
+                <div className="text-center space-y-2">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl bg-[#FFF3DF] border border-[#FFB703] text-[#B45309] text-xs font-black">
+                    <Vote className="w-4 h-4 text-[#FF6B00]" />
+                    <span>
+                      {isOnline
+                        ? `صوّت ${totalVoted} من ${activeOnlineCount} لاعبين`
+                        : `تصويت ${voteCatTurnIdx + 1} من ${offlinePlayers.length}`}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-[#24141D]">
+                    {isOnline ? (
+                      'صوّتوا لاختيار موضوع السالفة! 🗳️'
+                    ) : (
+                      <>
+                        دور اختيار السالفة لـ:{' '}
+                        <span className="text-[#FF6B00]">{offlinePlayers[voteCatTurnIdx]?.name}</span>
+                      </>
+                    )}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[#6B4F5E] font-readex">
+                    {isOnline
+                      ? 'كل لاعب يختار القسم اللي يبيه، وأكثر قسم يحصل أصوات تبدأ فيه الجولة فوراً!'
+                      : 'كل لاعب يضغط القسم المفضل لديه، وبعد تصويت الجميع نوزع البطاقات مباشرة.'}
+                  </p>
+                </div>
+
+                {/* Random All Option */}
+                {(() => {
+                  const randomVoters = votersByCat['random_all'] || [];
+                  const isMyChoice = myVote === 'random_all';
+                  return (
+                    <button
+                      onClick={() => {
+                        if (isOnline) {
+                          SoundFX.playClick();
+                          onSendAction?.({ type: 'barrah_vote_category', categoryId: 'random_all' });
+                        } else {
+                          castOfflineCategoryVote('random_all');
+                        }
+                      }}
+                      className={`w-full p-4 rounded-2xl border-2 text-right transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        isMyChoice
+                          ? 'bg-[#FFF3DF] border-[#FF6B00] ring-2 ring-[#FF6B00]/30 shadow-sm'
+                          : 'bg-[#FFFBF5] border-amber-200/80 hover:border-[#FF6B00]'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-black text-base text-[#24141D]">🎲 عشوائي من جميع الأقسام</div>
+                        <div className="text-xs text-[#6B4F5E] font-readex mt-0.5">
+                          يختار النظام قسماً وكلمة سرية مفاجئة مع 10 خيارات من نفس القسم
+                        </div>
+                        {randomVoters.length > 0 && (
+                          <div className="text-[11px] font-black text-[#D9480F] mt-1.5">
+                            الأصوات ({randomVoters.length}): {randomVoters.join('، ')}
+                          </div>
+                        )}
+                      </div>
+                      <span className="px-3 py-1 rounded-xl bg-white border border-amber-200 text-xs font-black text-[#FF6B00] shrink-0">
+                        {isMyChoice ? 'تصويتك ✅' : `${randomVoters.length} صوت`}
+                      </span>
+                    </button>
+                  );
+                })()}
+
+                {/* Category Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-96 overflow-y-auto pr-1">
+                  {categories.map((cat) => {
+                    const voters = votersByCat[cat.id] || [];
+                    const isMyChoice = myVote === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          if (isOnline) {
+                            SoundFX.playClick();
+                            onSendAction?.({ type: 'barrah_vote_category', categoryId: cat.id });
+                          } else {
+                            castOfflineCategoryVote(cat.id);
+                          }
+                        }}
+                        className={`p-4 rounded-2xl border-2 text-right transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                          isMyChoice
+                            ? 'bg-[#FFF3DF] border-[#FF6B00] ring-2 ring-[#FF6B00]/30 shadow-sm'
+                            : voters.length > 0
+                              ? 'bg-[#FFF8EE] border-amber-300'
+                              : 'bg-[#FFFBF5] border-amber-200/70 hover:bg-[#FFF8EE] hover:border-amber-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-black text-sm text-[#24141D] flex items-center gap-2">
+                              <span className="text-lg">{cat.icon}</span>
+                              <span>{cat.name}</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-lg bg-white border border-amber-200 text-[11px] font-black text-[#D9480F] tabular-nums shrink-0">
+                              {voters.length}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#6B4F5E] font-readex mt-1">{cat.description}</p>
+                        </div>
+                        {(isMyChoice || voters.length > 0) && (
+                          <div className="text-[10px] font-black text-[#B45309] pt-1 border-t border-amber-200/60">
+                            {isMyChoice && <span className="text-[#FF6B00] ml-1">اختيارك ✅ ·</span>}
+                            {voters.join('، ')}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Controls Footer */}
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                  {isOnline ? (
+                    isHost ? (
+                      <button
+                        onClick={() => {
+                          SoundFX.playTileSelect();
+                          onSendAction?.({ type: 'barrah_finalize_category' });
+                        }}
+                        className="px-8 py-3.5 rounded-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] text-white font-black text-base shadow-lg shadow-orange-500/20 cursor-pointer"
+                      >
+                        اعتماد التصويت وبدء البطاقات الآن 🕵️
+                      </button>
+                    ) : (
+                      <div className="px-5 py-3 rounded-2xl bg-[#FFF8EE] border border-amber-200 text-xs font-black text-[#5C4350]">
+                        {myVote
+                          ? 'تم تسجيل صوتك! بانتظار تصويت بقية اللاعبين لبدء توزيع البطاقات...'
+                          : 'اضغط على القسم الذي تفضله للتصويت 👆'}
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => startOfflineWithCategory('random_all')}
+                        className="px-6 py-3 rounded-2xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-300 text-[#24141D] font-black text-xs cursor-pointer"
+                      >
+                        🎲 اختيار عشوائي فوري وتخطي التصويت
+                      </button>
+                      <button
+                        onClick={() => setOfflinePhase('setup')}
+                        className="px-5 py-3 rounded-2xl bg-white hover:bg-amber-50 border border-amber-200 text-[#6B4F5E] font-black text-xs cursor-pointer"
+                      >
+                        تعديل اللاعبين
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -715,20 +875,37 @@ export const BarrahSalfaEngine: React.FC<BarrahSalfaEngineProps> = ({
               </div>
             )}
           </div>
-          <button
-            onClick={() => {
-              SoundFX.playClick();
-              if (isOnline) {
-                onSendAction?.({ type: 'return_to_lobby' });
-              } else {
-                setOfflinePhase('setup');
-              }
-            }}
-            className="px-8 py-3.5 rounded-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] text-white font-black inline-flex items-center gap-2 shadow-md cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>جولة جديدة</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {(!isOnline || isHost) && (
+              <button
+                onClick={() => {
+                  SoundFX.playClick();
+                  if (isOnline) {
+                    onSendAction?.({ type: 'barrah_restart_vote' });
+                  } else {
+                    setOfflineCategoryVotes({});
+                    setVoteCatTurnIdx(0);
+                    setOfflinePhase('category_vote');
+                  }
+                }}
+                className="px-8 py-3.5 rounded-2xl bg-gradient-to-l from-[#FF6B00] to-[#FFB703] text-white font-black inline-flex items-center gap-2 shadow-md cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>جولة جديدة (تصويت السالفة)</span>
+              </button>
+            )}
+            {isOnline && (
+              <button
+                onClick={() => {
+                  SoundFX.playClick();
+                  onSendAction?.({ type: 'return_to_lobby' });
+                }}
+                className="px-6 py-3.5 rounded-2xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-200 text-[#24141D] font-black text-sm cursor-pointer"
+              >
+                العودة للوبي الغرفة
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

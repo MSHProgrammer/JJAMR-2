@@ -111,7 +111,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 onClick={() => {
                   SoundFX.playTileSelect();
                   setShowAvatarDrawer((v) => !v);
-                  triggerReaction('excited', `${avatarInfo.name} جاهز! ✨`, 1800);
+                  triggerReaction(
+                    'excited',
+                    avatarInfo.name.trim() ? `${avatarInfo.name.trim()} جاهز! ✨` : 'شخصيتك جاهزة! ✨',
+                    1800
+                  );
                 }}
                 title="اضغط لتغيير شخصيتك"
                 className="cursor-pointer shrink-0 focus:outline-none"
@@ -182,7 +186,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-extrabold text-orange-700 cursor-pointer shadow-xs transition-colors"
               >
                 <CharacterAvatar avatarId={playerAvatar} size={24} interactive={false} />
-                <span>شخصيتك: {avatarInfo.name}</span>
+                <span>{avatarInfo.name.trim() ? `شخصيتك: ${avatarInfo.name.trim()}` : 'تغيير شخصيتك'}</span>
               </button>
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -200,28 +204,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
             {showAvatarDrawer && (
               <div className="p-3.5 rounded-2xl bg-white/95 border-2 border-amber-300 shadow-lg grid grid-cols-5 sm:grid-cols-10 gap-2">
-                {CHARACTER_AVATARS.map((char) => (
-                  <button
-                    key={char.id}
-                    type="button"
-                    onClick={() => {
-                      SoundFX.playTileSelect();
-                      onUpdatePlayerAvatar(char.id);
-                      setShowAvatarDrawer(false);
-                      triggerReaction('excited', `تم اختيار ${char.name}! 🎉`, 2200);
-                    }}
-                    className={`flex flex-col items-center gap-1 p-1.5 rounded-xl cursor-pointer transition-all ${
-                      playerAvatar === char.id
-                        ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
-                        : 'hover:bg-[#FFF8EE]'
-                    }`}
-                  >
-                    <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
-                    <span className="text-[10px] font-black text-[#23140E] truncate max-w-full">
-                      {char.name}
-                    </span>
-                  </button>
-                ))}
+                {CHARACTER_AVATARS.map((char) => {
+                  const cleanLabel = char.name.trim();
+                  return (
+                    <button
+                      key={char.id}
+                      type="button"
+                      onClick={() => {
+                        SoundFX.playTileSelect();
+                        onUpdatePlayerAvatar(char.id);
+                        setShowAvatarDrawer(false);
+                        triggerReaction(
+                          'excited',
+                          cleanLabel ? `تم اختيار ${cleanLabel}! 🎉` : 'تم اختيار شخصيتك! 🎉',
+                          2200
+                        );
+                      }}
+                      title={cleanLabel || char.tagline}
+                      className={`flex flex-col items-center gap-1 p-1.5 rounded-xl cursor-pointer transition-all ${
+                        playerAvatar === char.id
+                          ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                          : 'hover:bg-[#FFF8EE]'
+                      }`}
+                    >
+                      <CharacterAvatar avatarId={char.id} size={40} interactive={false} />
+                      {cleanLabel && (
+                        <span className="text-[10px] font-black text-[#23140E] truncate max-w-full">
+                          {cleanLabel}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

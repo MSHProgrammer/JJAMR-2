@@ -13,7 +13,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { BarrahCategory, GameConfig, RoomState } from '../types/jamr';
-import { JamrSocketClient, SocketStatus } from '../network/socketClient';
+import { getOrCreateSessionPlayerId, JamrSocketClient, SocketStatus } from '../network/socketClient';
 import { SoundFX } from '../utils/soundFx';
 import { BrokenTvEngine } from './games/BrokenTvEngine';
 import { IsmHayawanEngine } from './games/IsmHayawanEngine';
@@ -79,30 +79,38 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('disconnected');
   const [isP2P, setIsP2P] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isBusy, setIsBusy] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [showFloatingChat, setShowFloatingChat] = useState(false);
 
   // Start options inside lobby
-  const [barrahCatId, setBarrahCatId] = useState('random_all');
   const [brokenTvPace, setBrokenTvPace] = useState<40 | 60 | 90>(60);
 
+  const [localPlayerId] = useState<string>(() => getOrCreateSessionPlayerId());
   const clientRef = useRef<JamrSocketClient | null>(null);
+  const autoJoinedCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     const client = new JamrSocketClient({
       onRoomState: (r) => {
         setRoom(r);
         setErrorMsg('');
+        setIsBusy(false);
         onMatchStateChange?.(r.status === 'playing');
       },
       onStatusChange: (status, p2pFlag) => {
         setSocketStatus(status);
         setIsP2P(p2pFlag);
       },
-      onError: (msg) => setErrorMsg(msg),
+      onError: (msg) => {
+        setErrorMsg(msg);
+        setIsBusy(false);
+      },
       onKicked: () => {
         setRoom(null);
+        setIsBusy(false);
         setErrorMsg('قام المضيف بإخراجك من الغرفة.');
         onMatchStateChange?.(false);
       },
@@ -122,12 +130,34 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   }, [barrahCategories]);
 
   useEffect(() => {
+    if (playerName && playerName.trim()) {
+      setGuestName(playerName);
+    }
+  }, [playerName]);
+
+  useEffect(() => {
     if (playerAvatar) {
       setAvatar(sanitizeAvatarId(playerAvatar));
     }
   }, [playerAvatar]);
 
-  const localPlayerId = clientRef.current?.getPlayerId() || '';
+  // Auto-join when user opens an invite link (?room=CODE) and has a name ready
+  useEffect(() => {
+    const cleanCode = (initialRoomCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cleanName = (playerName || '').trim();
+    if (!cleanCode || cleanCode.length < 4 || !cleanName || room) return;
+    if (autoJoinedCodeRef.current === cleanCode) return;
+    autoJoinedCodeRef.current = cleanCode;
+    setTab('join');
+    setJoinCode(cleanCode);
+    setIsBusy(true);
+    void clientRef.current?.joinRoom({
+      roomCode: cleanCode,
+      playerName: cleanName,
+      avatar,
+    });
+  }, [initialRoomCode, playerName, avatar, room]);
+
   const isHost = room ? room.hostId === localPlayerId : false;
 
   const saveAvatar = (av: string) => {
@@ -142,7 +172,8 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     }
   };
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
+    if (isBusy) return;
     const cleanName = guestName.trim() || playerName || 'مضيف';
     const target = games.find((g) => g.id === selectedGameId);
     if (target && (target.underMaintenance || !target.isActive)) {
@@ -152,16 +183,19 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     SoundFX.playTileSelect();
     triggerReaction('picking_game', 'فتحنا الغرفة! 🚀', 2200);
     setErrorMsg('');
-    void clientRef.current?.createRoom({
+    setIsBusy(true);
+    await clientRef.current?.createRoom({
       playerName: cleanName,
       avatar,
       gameId: selectedGameId,
       totalRounds: ismRounds,
       isJudgeRoom: selectedGameId === 'ism_hayawan' ? isJudgeRoom : false,
     });
+    setIsBusy(false);
   };
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
+    if (isBusy) return;
     const cleanName = guestName.trim() || playerName || 'ضيف';
     const cleanCode = joinCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (cleanCode.length < 4) {
@@ -171,11 +205,13 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     SoundFX.playTileSelect();
     triggerReaction('excited', 'دخول سريع! ⚡', 2000);
     setErrorMsg('');
-    void clientRef.current?.joinRoom({
+    setIsBusy(true);
+    await clientRef.current?.joinRoom({
       roomCode: cleanCode,
       playerName: cleanName,
       avatar,
     });
+    setIsBusy(false);
   };
 
   const handleChatInputChange = (val: string) => {
@@ -200,6 +236,14 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
     void navigator.clipboard?.writeText(url);
     setCopiedLink(true);
     window.setTimeout(() => setCopiedLink(false), 1800);
+  };
+
+  const copyRoomCode = () => {
+    if (!room) return;
+    SoundFX.playClick();
+    void navigator.clipboard?.writeText(room.code);
+    setCopiedCode(true);
+    window.setTimeout(() => setCopiedCode(false), 1800);
   };
 
   // Maintenance Guard on active room game
@@ -362,6 +406,13 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
+              onClick={copyRoomCode}
+              className="px-4 py-2.5 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-300 text-[#23140E] font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-orange-500" />}
+              <span>{copiedCode ? 'تم نسخ الرمز!' : `نسخ الرمز: ${room.code}`}</span>
+            </button>
+            <button
               onClick={copyInviteLink}
               className="px-4 py-2.5 rounded-xl bg-gradient-to-l from-amber-500 to-orange-500 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
@@ -406,20 +457,8 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                 </div>
 
                 {room.gameId === 'barrah_salfa' && (
-                  <div>
-                    <label className="block text-xs font-black text-teal-700 mb-1.5">قسم برا السالفة:</label>
-                    <select
-                      value={barrahCatId}
-                      onChange={(e) => setBarrahCatId(e.target.value)}
-                      className="w-full rounded-xl bg-white border border-amber-200 px-3 py-2 text-xs font-bold text-[#23140E]"
-                    >
-                      <option value="random_all">🎲 عشوائي من جميع الأقسام</option>
-                      {barrahCategories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.icon} {c.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="flex items-center rounded-xl bg-white border border-teal-200 px-3.5 py-2.5 text-xs font-bold text-teal-800">
+                    🗳️ سيصوّت الجميع لاختيار موضوع السالفة فور الدخول للعبة!
                   </div>
                 )}
 
@@ -496,7 +535,6 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                   SoundFX.playTileSelect();
                   clientRef.current?.send({
                     type: 'start_game',
-                    categoryId: barrahCatId,
                     paceSeconds: brokenTvPace,
                     totalRounds: ismRounds,
                   });
@@ -614,6 +652,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             <div className="grid grid-cols-5 gap-2">
               {CHARACTER_AVATARS.map((char) => {
                 const active = avatar === char.id;
+                const cleanLabel = char.name.trim();
                 return (
                   <button
                     key={char.id}
@@ -622,7 +661,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                       SoundFX.playTileSelect();
                       saveAvatar(char.id);
                     }}
-                    title={`${char.name} (${char.tagline})`}
+                    title={cleanLabel ? `${cleanLabel} (${char.tagline})` : char.tagline}
                     className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
                       active
                         ? 'bg-amber-50 ring-2 ring-orange-500 shadow-sm scale-105'
@@ -635,9 +674,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                       mood={active ? 'excited' : 'idle'}
                       interactive={false}
                     />
-                    <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
-                      {char.name}
-                    </span>
+                    {cleanLabel && (
+                      <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
+                        {cleanLabel}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -733,10 +774,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             )}
 
             <button
-              onClick={handleCreateRoom}
-              className="w-full py-4 rounded-2xl bg-gradient-to-l from-orange-500 via-red-500 to-amber-500 text-white font-black text-base cursor-pointer shadow-md"
+              disabled={isBusy}
+              onClick={() => void handleCreateRoom()}
+              className="w-full py-4 rounded-2xl bg-gradient-to-l from-orange-500 via-red-500 to-amber-500 disabled:opacity-60 text-white font-black text-base cursor-pointer shadow-md"
             >
-              أنشئ الغرفة وخذ رمز الدعوة 🚀
+              {isBusy ? 'جاري فتح الغرفة والدخول...' : 'أنشئ الغرفة وخذ رمز الدعوة 🚀'}
             </button>
           </div>
         ) : (
@@ -748,15 +790,17 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                 maxLength={8}
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && void handleJoinRoom()}
                 placeholder="مثال: K7M9P2"
                 className="w-full rounded-xl bg-[#FFF8EE] border-2 border-amber-200 px-4 py-3.5 text-center text-2xl font-black tracking-widest text-orange-600 uppercase focus:outline-none focus:border-teal-500"
               />
             </div>
             <button
-              onClick={handleJoinRoom}
-              className="w-full py-4 rounded-2xl bg-gradient-to-l from-teal-500 to-emerald-500 text-white font-black text-base cursor-pointer shadow-md"
+              disabled={isBusy}
+              onClick={() => void handleJoinRoom()}
+              className="w-full py-4 rounded-2xl bg-gradient-to-l from-teal-500 to-emerald-500 disabled:opacity-60 text-white font-black text-base cursor-pointer shadow-md"
             >
-              ادخل الغرفة الآن ⚡
+              {isBusy ? 'جاري الدخول للغرفة...' : 'ادخل الغرفة الآن ⚡'}
             </button>
           </div>
         )}
@@ -768,7 +812,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
         )}
 
         <div className="text-center text-[11px] font-bold text-[#7C5D4F]">
-          {socketStatus === 'p2p' ? 'الوضع المباشر P2P جاهز' : socketStatus === 'connected' ? 'الخادم الفوري متصل' : 'جاري تهيئة الاتصال...'}
+          {socketStatus === 'p2p'
+            ? 'الوضع المباشر P2P جاهز'
+            : socketStatus === 'connected'
+              ? 'الخادم الفوري متصل ⚡'
+              : 'اتصال الخادم جاهز'}
         </div>
       </div>
     </div>

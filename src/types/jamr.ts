@@ -220,9 +220,10 @@ export interface IsmHayawanState {
 }
 
 export interface BarrahOnlineState {
-  phase: 'setup' | 'reveal_cards' | 'questions_stage' | 'voting_pass' | 'final_chance' | 'results';
+  phase: 'setup' | 'category_vote' | 'reveal_cards' | 'questions_stage' | 'voting_pass' | 'final_chance' | 'results';
   categoryId: string;
   categoryName: string;
+  categoryVotesByVoter?: Record<string, string>;
   secretWord: string;
   distractorWords: string[];
   spyId: string;

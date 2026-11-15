@@ -218,7 +218,7 @@ export default function App() {
               initialTab={view.tab}
               initialGameId={view.gameId}
               initialRoomCode={view.roomCode}
-              playerName={playerName || 'لاعب جَمْر'}
+              playerName={playerName}
               playerAvatar={playerAvatar}
               onUpdatePlayerAvatar={handleSaveAvatar}
               games={games}

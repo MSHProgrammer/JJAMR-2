@@ -10,15 +10,17 @@ import type {
 } from '../types/jamr';
 import {
   appendSystemChat,
+  applyBarrahCategoryVote,
   applyBrokenTvReaction,
   applyBrokenTvStepSubmission,
   areAllIsmFieldsFilled,
   computeIsmScores,
   createInitialBrokenTvState,
   createInitialIsmState,
+  finalizeBarrahCategoryVote,
   generateRoomCode,
   pickUnusedArabicLetter,
-  startBarrahOnlineRound,
+  startBarrahCategoryVote,
   startMafiaOnlineRound,
 } from '../shared/roomEngine';
 import { DEFAULT_BARRAH_CATEGORIES } from '../data/barrahSalfaCategories';
@@ -232,7 +234,21 @@ export class LocalRoomCoordinator {
     switch (type) {
       case 'join_room': {
         const exists = room.players.some((p) => p.id === pid);
-        if (!exists && room.players.length < room.maxPlayers) {
+        if (exists) {
+          room = {
+            ...room,
+            players: room.players.map((p) =>
+              p.id === pid
+                ? {
+                    ...p,
+                    connected: true,
+                    name: String(action.playerName || p.name),
+                    avatar: String(action.avatar || p.avatar),
+                  }
+                : p
+            ),
+          };
+        } else if (room.players.length < room.maxPlayers) {
           const newPlayer: Player = {
             id: pid,
             name: String(action.playerName || 'لاعب'),
@@ -344,7 +360,7 @@ export class LocalRoomCoordinator {
           ism.phase = 'letter_spin';
           room = { ...room, status: 'playing', ismHayawan: ism };
         } else if (room.gameId === 'barrah_salfa') {
-          room = startBarrahOnlineRound(room, String(action.categoryId || 'random_all'), this.categories);
+          room = startBarrahCategoryVote(room);
         } else if (room.gameId === 'mafia_no_hakam') {
           room = startMafiaOnlineRound(room);
         }
@@ -608,10 +624,27 @@ export class LocalRoomCoordinator {
         }
         break;
       }
+      case 'barrah_vote_category': {
+        room = applyBarrahCategoryVote(room, pid, String(action.categoryId || 'random_all'), this.categories);
+        break;
+      }
+      case 'barrah_finalize_category': {
+        if (pid === room.hostId && room.barrah?.phase === 'category_vote') {
+          room = finalizeBarrahCategoryVote(room, this.categories);
+        }
+        break;
+      }
+      case 'barrah_restart_vote': {
+        if (pid === room.hostId && room.gameId === 'barrah_salfa') {
+          room = startBarrahCategoryVote(room);
+        }
+        break;
+      }
       case 'barrah_mark_revealed': {
         if (room.barrah && !room.barrah.revealedPlayerIds.includes(pid)) {
           const revealedPlayerIds = [...room.barrah.revealedPlayerIds, pid];
-          const allReady = revealedPlayerIds.length >= room.players.length;
+          const activeCount = Math.max(1, room.players.filter((p) => p.connected).length || room.players.length);
+          const allReady = revealedPlayerIds.length >= activeCount;
           room = {
             ...room,
             barrah: {
@@ -651,7 +684,8 @@ export class LocalRoomCoordinator {
           const targetId = String(action.targetId || '');
           if (targetId && targetId !== pid) {
             const votesByVoter = { ...room.barrah.votesByVoter, [pid]: targetId };
-            const allVoted = Object.keys(votesByVoter).length >= room.players.length;
+            const activeCount = Math.max(1, room.players.filter((p) => p.connected).length || room.players.length);
+            const allVoted = Object.keys(votesByVoter).length >= activeCount;
             if (!allVoted) {
               room = { ...room, barrah: { ...room.barrah, votesByVoter } };
             } else {

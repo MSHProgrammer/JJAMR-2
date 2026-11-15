@@ -34,14 +34,17 @@ import { checkArabicSaudiDictionary } from './src/data/arabicSaudiDictionary.ts'
 import { normalizeArabic, normalizeDigits, sanitizeText, wordStartsWithLetter } from './src/utils/arabicNormalize.ts';
 import {
   appendSystemChat,
+  applyBarrahCategoryVote,
   applyBrokenTvReaction,
   applyBrokenTvStepSubmission,
   areAllIsmFieldsFilled,
   computeIsmScores,
   createInitialBrokenTvState,
   createInitialIsmState,
+  finalizeBarrahCategoryVote,
   generateRoomCode,
   pickUnusedArabicLetter,
+  startBarrahCategoryVote,
   startBarrahOnlineRound,
   startMafiaOnlineRound,
 } from './src/shared/roomEngine.ts';
@@ -1185,10 +1188,10 @@ app.post('/api/admin/ai/games', requireAdmin, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// HTTP Server + WebSocket Multiplayer Server
+// HTTP Server + WebSocket Multiplayer Server + REST Room Sync Fallback
 // ---------------------------------------------------------------------------
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, path: '/ws' });
 
 interface ClientMeta {
   ws: WebSocket;
@@ -1197,7 +1200,12 @@ interface ClientMeta {
 }
 
 const rooms = new Map<string, RoomState>();
+const roomLastActivity = new Map<string, number>();
 const clients = new Map<WebSocket, ClientMeta>();
+
+function touchRoom(code: string) {
+  roomLastActivity.set(code, Date.now());
+}
 
 function sendWs(ws: WebSocket, payload: unknown) {
   if (ws.readyState === WebSocket.OPEN) {
@@ -1208,6 +1216,7 @@ function sendWs(ws: WebSocket, payload: unknown) {
 function broadcastRoom(roomCode: string) {
   const room = rooms.get(roomCode);
   if (!room) return;
+  touchRoom(roomCode);
   const payload = JSON.stringify({ type: 'room_state', room });
   clients.forEach((meta) => {
     if (meta.roomCode === roomCode && meta.ws.readyState === WebSocket.OPEN) {
@@ -1216,7 +1225,36 @@ function broadcastRoom(roomCode: string) {
   });
 }
 
-function handleDisconnect(ws: WebSocket) {
+function removePlayerFromRoom(code: string, playerId: string, reasonText?: string) {
+  const room = rooms.get(code);
+  if (!room) return;
+  const remaining = room.players.filter((p) => p.id !== playerId);
+  if (remaining.length === 0) {
+    rooms.delete(code);
+    roomLastActivity.delete(code);
+    return;
+  }
+
+  let newHostId = room.hostId;
+  let updatedPlayers = remaining;
+  if (room.hostId === playerId) {
+    const nextHost = remaining.find((p) => p.connected) || remaining[0];
+    newHostId = nextHost.id;
+    updatedPlayers = remaining.map((p) => ({ ...p, isHost: p.id === newHostId }));
+  }
+
+  const leaver = room.players.find((p) => p.id === playerId);
+  const updatedRoom: RoomState = {
+    ...room,
+    hostId: newHostId,
+    players: updatedPlayers,
+    messages: appendSystemChat(room, reasonText || `غادر ${leaver?.name || 'لاعب'} الغرفة.`),
+  };
+  rooms.set(code, updatedRoom);
+  broadcastRoom(code);
+}
+
+function handleDisconnect(ws: WebSocket, explicitLeave = false) {
   const meta = clients.get(ws);
   if (!meta) return;
   clients.delete(ws);
@@ -1225,30 +1263,793 @@ function handleDisconnect(ws: WebSocket) {
   const room = rooms.get(meta.roomCode);
   if (!room) return;
 
-  const remaining = room.players.filter((p) => p.id !== meta.playerId);
-  if (remaining.length === 0) {
-    rooms.delete(room.code);
+  if (explicitLeave) {
+    removePlayerFromRoom(room.code, meta.playerId);
     return;
   }
 
-  let newHostId = room.hostId;
-  let updatedPlayers = remaining;
-  if (room.hostId === meta.playerId) {
-    const nextHost = remaining.find((p) => p.connected) || remaining[0];
-    newHostId = nextHost.id;
-    updatedPlayers = remaining.map((p) => ({ ...p, isHost: p.id === newHostId }));
-  }
+  // Keep player & room alive during temporary WebSocket drops/reconnects
+  const hasOtherSocket = Array.from(clients.values()).some(
+    (c) => c.roomCode === room.code && c.playerId === meta.playerId && c.ws.readyState === WebSocket.OPEN
+  );
+  if (hasOtherSocket) return;
 
-  const leaver = room.players.find((p) => p.id === meta.playerId);
   const updatedRoom: RoomState = {
     ...room,
-    hostId: newHostId,
-    players: updatedPlayers,
-    messages: appendSystemChat(room, `غادر ${leaver?.name || 'لاعب'} الغرفة.`),
+    players: room.players.map((p) =>
+      p.id === meta.playerId ? { ...p, connected: false } : p
+    ),
   };
   rooms.set(room.code, updatedRoom);
   broadcastRoom(room.code);
 }
+
+function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: string): { room?: RoomState; error?: string } {
+  const gameId = String(data.gameId || 'broken_tv');
+  const targetGame = dataStore.games.find((g) => g.id === gameId);
+  if (targetGame && (targetGame.underMaintenance || !targetGame.isActive)) {
+    return { error: 'هذه اللعبة حالياً تحت الصيانة والتطوير.' };
+  }
+
+  const pid = typeof data.playerId === 'string' && data.playerId ? data.playerId : fallbackPlayerId;
+  let code = generateRoomCode();
+  while (rooms.has(code)) {
+    code = generateRoomCode();
+  }
+  const playerName = sanitizeText(String(data.playerName || 'المضيف'), 30) || 'المضيف';
+  const avatar = sanitizeText(String(data.avatar || 'char_01'), 16) || 'char_01';
+  const isJudgeRoom = Boolean(data.isJudgeRoom) && gameId === 'ism_hayawan';
+  const totalRounds = Math.max(1, Math.min(50, Number(data.totalRounds) || 5));
+
+  const hostPlayer: Player = {
+    id: pid,
+    name: playerName,
+    avatar,
+    isHost: true,
+    isReady: true,
+    team: null,
+    score: 0,
+    connected: true,
+    isJudge: isJudgeRoom,
+  };
+
+  const room: RoomState = {
+    code,
+    hostId: pid,
+    gameId,
+    status: 'lobby',
+    maxPlayers: gameId === 'ism_hayawan' ? 100 : 16,
+    players: [hostPlayer],
+    messages: [],
+    createdAt: Date.now(),
+    isJudgeRoom,
+    totalRounds,
+  };
+  room.messages = appendSystemChat(room, `أنشأ ${playerName} الغرفة بنجاح.`);
+  rooms.set(code, room);
+  touchRoom(code);
+  return { room };
+}
+
+function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: string): { room?: RoomState; playerId?: string; error?: string } {
+  const code = String(data.roomCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const room = rooms.get(code);
+  if (!room) {
+    return { error: 'رمز الغرفة غير صحيح أو انتهت الجلسة.' };
+  }
+
+  const incomingId =
+    typeof data.existingPlayerId === 'string' && data.existingPlayerId
+      ? data.existingPlayerId
+      : typeof data.playerId === 'string' && data.playerId
+        ? data.playerId
+        : fallbackPlayerId;
+
+  const incomingName = sanitizeText(String(data.playerName || ''), 30);
+  const incomingAvatar = sanitizeText(String(data.avatar || ''), 16);
+
+  const existing = room.players.find((p) => p.id === incomingId);
+  if (existing) {
+    room.players = room.players.map((p) =>
+      p.id === incomingId
+        ? {
+            ...p,
+            connected: true,
+            name: incomingName || p.name,
+            avatar: incomingAvatar || p.avatar,
+          }
+        : p
+    );
+  } else {
+    if (room.players.length >= room.maxPlayers) {
+      return { error: `الغرفة ممتلئة (الحد الأقصى ${room.maxPlayers} لاعب).` };
+    }
+    const playerName = incomingName || 'ضيف';
+    const avatar = incomingAvatar || 'char_04';
+    room.players.push({
+      id: incomingId,
+      name: playerName,
+      avatar,
+      isHost: false,
+      isReady: false,
+      team: null,
+      score: 0,
+      connected: true,
+    });
+    room.messages = appendSystemChat(room, `انضم ${playerName} إلى الغرفة!`);
+  }
+  rooms.set(code, room);
+  touchRoom(code);
+  return { room, playerId: incomingId };
+}
+
+function applyRoomActionOnServer(
+  initialRoom: RoomState,
+  pid: string,
+  data: Record<string, unknown>
+): { room: RoomState; error?: string; stop?: boolean } {
+  let room = initialRoom;
+  const type = String(data.type || '');
+
+  switch (type) {
+    case 'toggle_ready': {
+      room = {
+        ...room,
+        players: room.players.map((p) => (p.id === pid ? { ...p, isReady: !p.isReady } : p)),
+      };
+      break;
+    }
+    case 'set_team': {
+      room = {
+        ...room,
+        players: room.players.map((p) =>
+          p.id === pid ? { ...p, team: (data.team as 'A' | 'B' | null) || null } : p
+        ),
+      };
+      break;
+    }
+    case 'change_game': {
+      if (pid !== room.hostId) break;
+      const newGameId = String(data.gameId || room.gameId);
+      const target = dataStore.games.find((g) => g.id === newGameId);
+      if (target && (target.underMaintenance || !target.isActive)) {
+        return { room, error: 'هذه اللعبة تحت التعديل والصيانة حالياً.' };
+      }
+      room = {
+        ...room,
+        gameId: newGameId,
+        status: 'lobby',
+        maxPlayers: newGameId === 'ism_hayawan' ? 100 : 16,
+        brokenTv: undefined,
+        ismHayawan: undefined,
+        barrah: undefined,
+        mafia: undefined,
+        messages: appendSystemChat(room, `تم تغيير اللعبة إلى: ${target?.title || newGameId}`),
+      };
+      break;
+    }
+    case 'kick_player': {
+      if (pid !== room.hostId) break;
+      const targetId = String(data.targetId || '');
+      if (!targetId || targetId === room.hostId) break;
+      clients.forEach((cMeta) => {
+        if (cMeta.roomCode === room.code && cMeta.playerId === targetId) {
+          sendWs(cMeta.ws, { type: 'kicked' });
+          cMeta.roomCode = null;
+        }
+      });
+      const kicked = room.players.find((p) => p.id === targetId);
+      room = {
+        ...room,
+        players: room.players.filter((p) => p.id !== targetId),
+        messages: appendSystemChat(room, `تم إخراج ${kicked?.name || 'لاعب'} من الغرفة.`),
+      };
+      break;
+    }
+    case 'chat_message':
+    case 'send_chat': {
+      const sender = room.players.find((p) => p.id === pid);
+      const text = sanitizeText(String(data.text || ''), 240);
+      if (sender && text) {
+        room = {
+          ...room,
+          messages: [
+            ...room.messages,
+            {
+              id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+              senderId: sender.id,
+              senderName: sender.name,
+              senderAvatar: sender.avatar,
+              text,
+              timestamp: Date.now(),
+            },
+          ].slice(-80),
+        };
+      }
+      break;
+    }
+    case 'voice_signal': {
+      const targetId = String(data.targetId || '');
+      clients.forEach((cMeta) => {
+        if (cMeta.roomCode === room.code && (!targetId || cMeta.playerId === targetId) && cMeta.playerId !== pid) {
+          sendWs(cMeta.ws, {
+            type: 'voice_signal',
+            fromId: pid,
+            signal: data.signal,
+          });
+        }
+      });
+      return { room, stop: true };
+    }
+    case 'return_to_lobby': {
+      room = {
+        ...room,
+        status: 'lobby',
+        brokenTv: undefined,
+        ismHayawan: undefined,
+        barrah: undefined,
+        mafia: undefined,
+      };
+      break;
+    }
+    case 'start_game': {
+      if (pid !== room.hostId) break;
+      if (room.gameId === 'broken_tv') {
+        const pace = ([40, 60, 90].includes(Number(data.paceSeconds)) ? Number(data.paceSeconds) : 60) as 40 | 60 | 90;
+        const bt = createInitialBrokenTvState(room.players, pace);
+        bt.phase = 'write';
+        bt.roundDeadline = Date.now() + pace * 1000;
+        room = { ...room, status: 'playing', brokenTv: bt };
+      } else if (room.gameId === 'ism_hayawan') {
+        const rounds = Math.max(1, Math.min(50, Number(data.totalRounds || room.totalRounds || 5)));
+        const ism = createInitialIsmState(rounds, Boolean(room.isJudgeRoom), room.isJudgeRoom ? room.hostId : null);
+        ism.phase = 'letter_spin';
+        room = { ...room, status: 'playing', ismHayawan: ism };
+      } else if (room.gameId === 'barrah_salfa') {
+        // Players enter Barrah Salfa and vote on the topic/category inside the game
+        room = startBarrahCategoryVote(room);
+      } else if (room.gameId === 'mafia_no_hakam') {
+        room = startMafiaOnlineRound(room);
+      }
+      break;
+    }
+    case 'broken_tv_submit': {
+      room = applyBrokenTvStepSubmission(room, pid, String(data.content || ''));
+      break;
+    }
+    case 'broken_tv_react': {
+      room = applyBrokenTvReaction(
+        room,
+        Number(data.chainIndex || 0),
+        Number(data.stepIndex || 0),
+        data.reaction as BrokenTvReactionType,
+        pid
+      );
+      break;
+    }
+    case 'broken_tv_advance_reveal': {
+      if (room.brokenTv && pid === room.hostId) {
+        const bt = room.brokenTv;
+        const chain = bt.chains[bt.revealChainIndex];
+        if (chain && bt.revealStepIndex + 1 < chain.steps.length) {
+          room = { ...room, brokenTv: { ...bt, revealStepIndex: bt.revealStepIndex + 1 } };
+        } else if (bt.revealChainIndex + 1 < bt.chains.length) {
+          room = { ...room, brokenTv: { ...bt, revealChainIndex: bt.revealChainIndex + 1, revealStepIndex: 0 } };
+        } else {
+          room = { ...room, brokenTv: { ...bt, phase: 'podium' } };
+        }
+      }
+      break;
+    }
+    case 'ism_hayawan_set_letter': {
+      if (room.ismHayawan && pid === room.hostId) {
+        const letter = String(data.letter || pickUnusedArabicLetter(room.ismHayawan.usedLetters));
+        room = {
+          ...room,
+          ismHayawan: {
+            ...room.ismHayawan,
+            currentLetter: letter,
+            usedLetters: [...room.ismHayawan.usedLetters, letter],
+            phase: 'writing',
+            stoppedByPlayerName: null,
+            answersByPlayer: {},
+            disputes: [],
+          },
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_sync_answers': {
+      if (room.ismHayawan) {
+        room = {
+          ...room,
+          ismHayawan: {
+            ...room.ismHayawan,
+            answersByPlayer: {
+              ...room.ismHayawan.answersByPlayer,
+              [pid]: data.answers as IsmPlayerAnswers,
+            },
+          },
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_stop': {
+      if (room.ismHayawan && room.ismHayawan.phase === 'writing') {
+        const stopper = room.players.find((p) => p.id === pid);
+        const mergedAnswers = {
+          ...room.ismHayawan.answersByPlayer,
+          ...(data.answers ? { [pid]: data.answers as IsmPlayerAnswers } : {}),
+        };
+        const stopperAnswers = mergedAnswers[pid];
+        if (!areAllIsmFieldsFilled(stopperAnswers)) {
+          return { room, error: 'أكمل كتابة جميع الخانات الـ 5 قبل الضغط على ستوب!' };
+        }
+        const updatedIsm: NonNullable<RoomState['ismHayawan']> = {
+          ...room.ismHayawan,
+          phase: 'scoring',
+          stoppedByPlayerName: stopper?.name || 'أحد اللاعبين',
+          answersByPlayer: mergedAnswers,
+        };
+        const { fieldScoresByPlayer, roundTotalsByPlayer, reasonsByPlayer } = computeIsmScores(updatedIsm, room.players);
+        updatedIsm.fieldScoresByPlayer = fieldScoresByPlayer;
+        updatedIsm.roundTotalsByPlayer = roundTotalsByPlayer;
+        updatedIsm.reasonsByPlayer = reasonsByPlayer;
+        updatedIsm.analyzedBy = 'saudi_arabic_index';
+        room = {
+          ...room,
+          ismHayawan: updatedIsm,
+          players: room.players.map((p) => ({
+            ...p,
+            score: p.score + (roundTotalsByPlayer[p.id] || 0),
+          })),
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_apply_ai_analysis': {
+      if (room.ismHayawan && pid === room.hostId) {
+        const nextFieldScores = data.fieldScoresByPlayer as Record<string, Record<IsmFieldKey, number>>;
+        const nextRoundTotals = data.roundTotalsByPlayer as Record<string, number>;
+        const nextReasons = data.reasonsByPlayer as Record<string, Record<IsmFieldKey, IsmFieldEvaluation>> | undefined;
+        const prevTotals = room.ismHayawan.roundTotalsByPlayer || {};
+        room = {
+          ...room,
+          players: room.players.map((p) => {
+            const prevPts = prevTotals[p.id] || 0;
+            const nextPts = nextRoundTotals?.[p.id] ?? prevPts;
+            return { ...p, score: Math.max(0, p.score - prevPts + nextPts) };
+          }),
+          ismHayawan: {
+            ...room.ismHayawan,
+            fieldScoresByPlayer: nextFieldScores || room.ismHayawan.fieldScoresByPlayer,
+            roundTotalsByPlayer: nextRoundTotals || room.ismHayawan.roundTotalsByPlayer,
+            reasonsByPlayer: nextReasons || room.ismHayawan.reasonsByPlayer,
+            analyzedBy: (data.analyzedBy as 'gemini_ai' | 'saudi_arabic_index' | 'manual') || 'gemini_ai',
+          },
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_set_field_score': {
+      if (room.ismHayawan && pid === room.hostId) {
+        const targetId = String(data.targetPlayerId || '');
+        const field = data.field as IsmFieldKey;
+        const newPts = Math.max(0, Math.min(10, Number(data.points || 0)));
+        const prevPts = room.ismHayawan.fieldScoresByPlayer[targetId]?.[field] || 0;
+        const diff = newPts - prevPts;
+        room = {
+          ...room,
+          players: room.players.map((p) =>
+            p.id === targetId ? { ...p, score: Math.max(0, p.score + diff) } : p
+          ),
+          ismHayawan: {
+            ...room.ismHayawan,
+            fieldScoresByPlayer: {
+              ...room.ismHayawan.fieldScoresByPlayer,
+              [targetId]: {
+                ...(room.ismHayawan.fieldScoresByPlayer[targetId] || { name: 0, animal: 0, plant: 0, object: 0, country: 0 }),
+                [field]: newPts,
+              },
+            },
+            roundTotalsByPlayer: {
+              ...room.ismHayawan.roundTotalsByPlayer,
+              [targetId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[targetId] || 0) + diff),
+            },
+          },
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_judge_score_adjust': {
+      if (room.ismHayawan && pid === room.hostId) {
+        const targetId = String(data.targetPlayerId || '');
+        const delta = Number(data.delta || 0);
+        room = {
+          ...room,
+          players: room.players.map((p) =>
+            p.id === targetId ? { ...p, score: Math.max(0, p.score + delta) } : p
+          ),
+          ismHayawan: {
+            ...room.ismHayawan,
+            roundTotalsByPlayer: {
+              ...room.ismHayawan.roundTotalsByPlayer,
+              [targetId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[targetId] || 0) + delta),
+            },
+          },
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_dispute': {
+      if (room.ismHayawan) {
+        const challenger = room.players.find((p) => p.id === pid);
+        const targetId = String(data.targetPlayerId || '');
+        const target = room.players.find((p) => p.id === targetId);
+        const field = data.field as IsmFieldKey;
+        const word = sanitizeText(String(data.word || ''), 60);
+        const reviewer = room.ismHayawan.isJudgeRoom && room.ismHayawan.judgeId
+          ? room.ismHayawan.judgeId
+          : (room.players.find((p) => p.id !== pid && p.id !== targetId)?.id || room.hostId);
+        room = {
+          ...room,
+          ismHayawan: {
+            ...room.ismHayawan,
+            disputes: [
+              ...room.ismHayawan.disputes,
+              {
+                id: `dsp_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                targetPlayerId: targetId,
+                targetPlayerName: target?.name || 'لاعب',
+                field,
+                word,
+                challengerId: pid,
+                challengerName: challenger?.name || 'لاعب',
+                assignedReviewerId: reviewer,
+                status: 'pending',
+              },
+            ],
+          },
+        };
+      }
+      break;
+    }
+    case 'ism_hayawan_resolve_dispute': {
+      if (room.ismHayawan) {
+        const disputeId = String(data.disputeId || '');
+        const approved = Boolean(data.approved);
+        const d = room.ismHayawan.disputes.find((x) => x.id === disputeId);
+        if (d && d.status === 'pending') {
+          const oldScore = room.ismHayawan.fieldScoresByPlayer[d.targetPlayerId]?.[d.field] || 0;
+          const newScore = approved ? 10 : 0;
+          const diff = newScore - oldScore;
+          room = {
+            ...room,
+            players: room.players.map((p) =>
+              p.id === d.targetPlayerId ? { ...p, score: Math.max(0, p.score + diff) } : p
+            ),
+            ismHayawan: {
+              ...room.ismHayawan,
+              disputes: room.ismHayawan.disputes.map((x) =>
+                x.id === disputeId ? { ...x, status: approved ? 'approved' : 'rejected' } : x
+              ),
+              fieldScoresByPlayer: {
+                ...room.ismHayawan.fieldScoresByPlayer,
+                [d.targetPlayerId]: {
+                  ...(room.ismHayawan.fieldScoresByPlayer[d.targetPlayerId] || { name: 0, animal: 0, plant: 0, object: 0, country: 0 }),
+                  [d.field]: newScore,
+                },
+              },
+              roundTotalsByPlayer: {
+                ...room.ismHayawan.roundTotalsByPlayer,
+                [d.targetPlayerId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[d.targetPlayerId] || 0) + diff),
+              },
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'ism_hayawan_next_round': {
+      if (room.ismHayawan && pid === room.hostId) {
+        if (room.ismHayawan.currentRound >= room.ismHayawan.totalRounds) {
+          room = { ...room, ismHayawan: { ...room.ismHayawan, phase: 'game_over' } };
+        } else {
+          room = {
+            ...room,
+            ismHayawan: {
+              ...room.ismHayawan,
+              currentRound: room.ismHayawan.currentRound + 1,
+              phase: 'letter_spin',
+              stoppedByPlayerName: null,
+              answersByPlayer: {},
+              disputes: [],
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'barrah_vote_category': {
+      room = applyBarrahCategoryVote(room, pid, String(data.categoryId || 'random_all'), dataStore.barrahCategories);
+      break;
+    }
+    case 'barrah_finalize_category': {
+      if (pid === room.hostId && room.barrah?.phase === 'category_vote') {
+        room = finalizeBarrahCategoryVote(room, dataStore.barrahCategories);
+      }
+      break;
+    }
+    case 'barrah_restart_vote': {
+      if (pid === room.hostId && room.gameId === 'barrah_salfa') {
+        room = startBarrahCategoryVote(room);
+      }
+      break;
+    }
+    case 'barrah_mark_revealed': {
+      if (room.barrah && !room.barrah.revealedPlayerIds.includes(pid)) {
+        const revealedPlayerIds = [...room.barrah.revealedPlayerIds, pid];
+        const activeCount = Math.max(1, room.players.filter((p) => p.connected).length || room.players.length);
+        const allReady = revealedPlayerIds.length >= activeCount;
+        room = {
+          ...room,
+          barrah: {
+            ...room.barrah,
+            revealedPlayerIds,
+            phase: allReady ? 'questions_stage' : room.barrah.phase,
+          },
+        };
+      }
+      break;
+    }
+    case 'barrah_next_pair': {
+      if (room.barrah && pid === room.hostId) {
+        let pair = [...room.players].sort(() => Math.random() - 0.5);
+        if (room.players.length >= 3 && pair[0]?.id === room.barrah.askerId && pair[1]?.id === room.barrah.answererId) {
+          pair = [pair[1], pair[2] || pair[0]];
+        }
+        room = {
+          ...room,
+          barrah: {
+            ...room.barrah,
+            askerId: pair[0]?.id || room.barrah.askerId,
+            answererId: pair[1]?.id || room.barrah.answererId,
+          },
+        };
+      }
+      break;
+    }
+    case 'barrah_start_voting': {
+      if (room.barrah && pid === room.hostId) {
+        room = { ...room, barrah: { ...room.barrah, phase: 'voting_pass' } };
+      }
+      break;
+    }
+    case 'barrah_vote': {
+      if (room.barrah) {
+        const targetId = String(data.targetId || '');
+        if (targetId && targetId !== pid) {
+          const votesByVoter = { ...room.barrah.votesByVoter, [pid]: targetId };
+          const activeCount = Math.max(1, room.players.filter((p) => p.connected).length || room.players.length);
+          const allVoted = Object.keys(votesByVoter).length >= activeCount;
+          if (!allVoted) {
+            room = { ...room, barrah: { ...room.barrah, votesByVoter } };
+          } else {
+            const tally: Record<string, number> = {};
+            Object.values(votesByVoter).forEach((v) => { tally[v] = (tally[v] || 0) + 1; });
+            const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+            const topSuspect = sorted[0]?.[0];
+            const caught = topSuspect === room.barrah.spyId;
+            room = {
+              ...room,
+              barrah: {
+                ...room.barrah,
+                votesByVoter,
+                phase: caught ? 'final_chance' : 'results',
+                spyGuessDeadline: caught ? Date.now() + 25000 : null,
+                winner: caught ? null : 'spy',
+              },
+            };
+          }
+        }
+      }
+      break;
+    }
+    case 'barrah_spy_guess': {
+      if (room.barrah && pid === room.barrah.spyId) {
+        const guess = String(data.word || '');
+        const won = guess === room.barrah.secretWord;
+        room = {
+          ...room,
+          barrah: {
+            ...room.barrah,
+            spyGuess: guess,
+            phase: 'results',
+            winner: won ? 'spy' : 'insiders',
+          },
+        };
+      }
+      break;
+    }
+    case 'mafia_mark_revealed': {
+      if (room.mafia && !room.mafia.revealedIds.includes(pid)) {
+        const revealedIds = [...room.mafia.revealedIds, pid];
+        const all = revealedIds.length >= room.players.length;
+        room = {
+          ...room,
+          mafia: { ...room.mafia, revealedIds, phase: all ? 'night' : 'role_reveal' },
+        };
+      }
+      break;
+    }
+    case 'mafia_night_action': {
+      if (room.mafia && room.mafia.phase === 'night') {
+        const currentMafia = room.mafia;
+        const role = currentMafia.rolesByPlayer[pid];
+        const targetId = String(data.targetId || '');
+        const nc = { ...currentMafia.nightChoices };
+        if (role === 'mafia') nc.mafiaTarget = targetId;
+        if (role === 'doctor') nc.doctorSave = targetId;
+        if (role === 'detective') nc.detectiveCheck = targetId;
+
+        const aliveRoles = currentMafia.aliveIds.map((id) => currentMafia.rolesByPlayer[id]);
+        const needMafia = aliveRoles.includes('mafia');
+        const needDoc = aliveRoles.includes('doctor');
+        const needDet = aliveRoles.includes('detective');
+        const done =
+          (!needMafia || Boolean(nc.mafiaTarget)) &&
+          (!needDoc || Boolean(nc.doctorSave)) &&
+          (!needDet || Boolean(nc.detectiveCheck));
+
+        if (!done) {
+          room = { ...room, mafia: { ...currentMafia, nightChoices: nc } };
+        } else {
+          const victimId = nc.mafiaTarget;
+          const saved = victimId && victimId === nc.doctorSave;
+          let aliveIds = [...currentMafia.aliveIds];
+          let summary = 'انقضت الليلة بسلام! نجح الطبيب في إنقاذ الضحية.';
+          if (victimId && !saved) {
+            aliveIds = aliveIds.filter((id) => id !== victimId);
+            const vName = room.players.find((p) => p.id === victimId)?.name || 'لاعب';
+            summary = `مع الأسف! استيقظت المدينة على إقصاء ${vName} ليلاً.`;
+          }
+          const aliveMafia = aliveIds.filter((id) => currentMafia.rolesByPlayer[id] === 'mafia').length;
+          const aliveCitizens = aliveIds.length - aliveMafia;
+          const winner = aliveMafia === 0 ? 'citizens' : aliveMafia >= aliveCitizens ? 'mafia' : null;
+          room = {
+            ...room,
+            mafia: {
+              ...currentMafia,
+              nightChoices: nc,
+              aliveIds,
+              lastNightSummary: summary,
+              phase: winner ? 'game_over' : 'day_announcement',
+              winner,
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'mafia_next_phase': {
+      if (room.mafia && pid === room.hostId) {
+        if (room.mafia.phase === 'day_announcement') {
+          room = { ...room, mafia: { ...room.mafia, phase: 'day_discussion' } };
+        } else if (room.mafia.phase === 'day_discussion') {
+          room = { ...room, mafia: { ...room.mafia, phase: 'day_voting', dayVotes: {} } };
+        }
+      }
+      break;
+    }
+    case 'mafia_day_vote': {
+      if (room.mafia && room.mafia.phase === 'day_voting' && room.mafia.aliveIds.includes(pid)) {
+        const currentMafia = room.mafia;
+        const targetId = String(data.targetId || '');
+        const dayVotes = { ...currentMafia.dayVotes, [pid]: targetId };
+        if (Object.keys(dayVotes).length < currentMafia.aliveIds.length) {
+          room = { ...room, mafia: { ...currentMafia, dayVotes } };
+        } else {
+          const counts: Record<string, number> = {};
+          Object.values(dayVotes).forEach((v) => { counts[v] = (counts[v] || 0) + 1; });
+          const eliminatedId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+          const aliveIds = eliminatedId
+            ? currentMafia.aliveIds.filter((id) => id !== eliminatedId)
+            : currentMafia.aliveIds;
+          const aliveMafia = aliveIds.filter((id) => currentMafia.rolesByPlayer[id] === 'mafia').length;
+          const aliveCitizens = aliveIds.length - aliveMafia;
+          const winner = aliveMafia === 0 ? 'citizens' : aliveMafia >= aliveCitizens ? 'mafia' : null;
+          room = {
+            ...room,
+            mafia: {
+              ...currentMafia,
+              dayVotes,
+              aliveIds,
+              dayNumber: currentMafia.dayNumber + 1,
+              nightChoices: {},
+              phase: winner ? 'game_over' : 'night',
+              winner,
+            },
+          };
+        }
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  return { room };
+}
+
+// REST Room Endpoints (guaranteed reliable fallback & instant state sync)
+app.post('/api/rooms/create', (req, res) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const fallbackPid = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const result = createRoomOnServer(body, fallbackPid);
+  if (result.error || !result.room) {
+    return res.status(400).json({ ok: false, error: result.error || 'تعذر إنشاء الغرفة.' });
+  }
+  return res.json({ ok: true, room: result.room });
+});
+
+app.post('/api/rooms/join', (req, res) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const fallbackPid = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const result = joinRoomOnServer(body, fallbackPid);
+  if (result.error || !result.room) {
+    return res.status(404).json({ ok: false, error: result.error || 'رمز الغرفة غير صحيح.' });
+  }
+  broadcastRoom(result.room.code);
+  return res.json({ ok: true, room: result.room });
+});
+
+app.get('/api/rooms/:code', (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const room = rooms.get(code);
+  if (!room) {
+    return res.status(404).json({ ok: false, error: 'الغرفة غير موجودة أو انتهت الجلسة.' });
+  }
+  touchRoom(code);
+  return res.json({ ok: true, room });
+});
+
+app.post('/api/rooms/action', (req, res) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const code = String(body.roomCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const pid = String(body.playerId || '');
+  const type = String(body.type || '');
+  if (!code || !pid) {
+    return res.status(400).json({ ok: false, error: 'بيانات الغرفة ناقصة.' });
+  }
+  if (type === 'leave_room') {
+    removePlayerFromRoom(code, pid);
+    return res.json({ ok: true, left: true });
+  }
+  const existing = rooms.get(code);
+  if (!existing) {
+    return res.status(404).json({ ok: false, error: 'الغرفة غير موجودة أو انتهت الجلسة.' });
+  }
+  const result = applyRoomActionOnServer(existing, pid, body);
+  if (result.error) {
+    return res.status(400).json({ ok: false, error: result.error, room: existing });
+  }
+  rooms.set(code, result.room);
+  broadcastRoom(code);
+  return res.json({ ok: true, room: result.room });
+});
+
+// Cleanup idle rooms with 0 connected players after 5 minutes (or > 3 hours idle)
+const roomCleanupInterval = setInterval(() => {
+  const now = Date.now();
+  rooms.forEach((room, code) => {
+    const last = roomLastActivity.get(code) || room.createdAt;
+    const hasConnected = room.players.some((p) => p.connected);
+    if ((!hasConnected && now - last > 5 * 60_000) || now - last > 3 * 60 * 60_000) {
+      rooms.delete(code);
+      roomLastActivity.delete(code);
+    }
+  });
+}, 60_000);
 
 // 25s heartbeat to prevent Cloudflare 100s idle WebSocket timeout
 const wsHeartbeat = setInterval(() => {
@@ -1259,7 +2060,10 @@ const wsHeartbeat = setInterval(() => {
   });
 }, 25_000);
 
-wss.on('close', () => clearInterval(wsHeartbeat));
+wss.on('close', () => {
+  clearInterval(wsHeartbeat);
+  clearInterval(roomCleanupInterval);
+});
 
 wss.on('connection', (ws) => {
   const initialId = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1286,683 +2090,54 @@ wss.on('connection', (ws) => {
     }
 
     if (type === 'create_room') {
-      const gameId = String(data.gameId || 'broken_tv');
-      const targetGame = dataStore.games.find((g) => g.id === gameId);
-      if (targetGame && (targetGame.underMaintenance || !targetGame.isActive)) {
-        sendWs(ws, { type: 'error', message: 'هذه اللعبة حالياً تحت الصيانة والتطوير.' });
+      const result = createRoomOnServer(data, meta.playerId);
+      if (result.error || !result.room) {
+        sendWs(ws, { type: 'error', message: result.error || 'تعذر إنشاء الغرفة.' });
         return;
       }
-
-      let code = generateRoomCode();
-      while (rooms.has(code)) {
-        code = generateRoomCode();
-      }
-      const playerName = sanitizeText(String(data.playerName || 'المضيف'), 30) || 'المضيف';
-      const avatar = sanitizeText(String(data.avatar || 'char_01'), 16) || 'char_01';
-      const isJudgeRoom = Boolean(data.isJudgeRoom) && gameId === 'ism_hayawan';
-      const totalRounds = Math.max(1, Math.min(50, Number(data.totalRounds) || 5));
-
-      const hostPlayer: Player = {
-        id: meta.playerId,
-        name: playerName,
-        avatar,
-        isHost: true,
-        isReady: true,
-        team: null,
-        score: 0,
-        connected: true,
-        isJudge: isJudgeRoom,
-      };
-
-      const room: RoomState = {
-        code,
-        hostId: meta.playerId,
-        gameId,
-        status: 'lobby',
-        maxPlayers: gameId === 'ism_hayawan' ? 100 : 16,
-        players: [hostPlayer],
-        messages: [],
-        createdAt: Date.now(),
-        isJudgeRoom,
-        totalRounds,
-      };
-      room.messages = appendSystemChat(room, `أنشأ ${playerName} الغرفة بنجاح.`);
-      rooms.set(code, room);
-      meta.roomCode = code;
-      broadcastRoom(code);
+      meta.roomCode = result.room.code;
+      broadcastRoom(result.room.code);
       return;
     }
 
     if (type === 'join_room') {
-      const code = String(data.roomCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const room = rooms.get(code);
-      if (!room) {
-        sendWs(ws, { type: 'error', message: 'رمز الغرفة غير صحيح أو انتهت الجلسة.' });
+      const result = joinRoomOnServer(data, meta.playerId);
+      if (result.error || !result.room) {
+        sendWs(ws, { type: 'error', message: result.error || 'رمز الغرفة غير صحيح أو انتهت الجلسة.' });
         return;
       }
-
-      const incomingId = typeof data.existingPlayerId === 'string' && data.existingPlayerId
-        ? data.existingPlayerId
-        : meta.playerId;
-      meta.playerId = incomingId;
-      meta.roomCode = code;
-
-      const existing = room.players.find((p) => p.id === incomingId);
-      if (existing) {
-        room.players = room.players.map((p) =>
-          p.id === incomingId ? { ...p, connected: true } : p
-        );
-      } else {
-        if (room.players.length >= room.maxPlayers) {
-          sendWs(ws, { type: 'error', message: `الغرفة ممتلئة (الحد الأقصى ${room.maxPlayers} لاعب).` });
-          meta.roomCode = null;
-          return;
-        }
-        const playerName = sanitizeText(String(data.playerName || 'ضيف'), 30) || 'ضيف';
-        const avatar = sanitizeText(String(data.avatar || 'char_04'), 16) || 'char_04';
-        room.players.push({
-          id: incomingId,
-          name: playerName,
-          avatar,
-          isHost: false,
-          isReady: false,
-          team: null,
-          score: 0,
-          connected: true,
-        });
-        room.messages = appendSystemChat(room, `انضم ${playerName} إلى الغرفة!`);
-      }
-      rooms.set(code, room);
-      broadcastRoom(code);
+      if (result.playerId) meta.playerId = result.playerId;
+      meta.roomCode = result.room.code;
+      broadcastRoom(result.room.code);
       return;
     }
 
     if (type === 'leave_room') {
-      handleDisconnect(ws);
+      handleDisconnect(ws, true);
+      meta.roomCode = null;
       return;
     }
 
-    if (!meta.roomCode) return;
-    let room = rooms.get(meta.roomCode);
-    if (!room) return;
-    const pid = meta.playerId;
-
-    switch (type) {
-      case 'toggle_ready': {
-        room = {
-          ...room,
-          players: room.players.map((p) => (p.id === pid ? { ...p, isReady: !p.isReady } : p)),
-        };
-        break;
-      }
-      case 'set_team': {
-        room = {
-          ...room,
-          players: room.players.map((p) =>
-            p.id === pid ? { ...p, team: (data.team as 'A' | 'B' | null) || null } : p
-          ),
-        };
-        break;
-      }
-      case 'change_game': {
-        if (pid !== room.hostId) break;
-        const newGameId = String(data.gameId || room.gameId);
-        const target = dataStore.games.find((g) => g.id === newGameId);
-        if (target && (target.underMaintenance || !target.isActive)) {
-          sendWs(ws, { type: 'error', message: 'هذه اللعبة تحت التعديل والصيانة حالياً.' });
-          return;
-        }
-        room = {
-          ...room,
-          gameId: newGameId,
-          status: 'lobby',
-          maxPlayers: newGameId === 'ism_hayawan' ? 100 : 16,
-          brokenTv: undefined,
-          ismHayawan: undefined,
-          barrah: undefined,
-          mafia: undefined,
-          messages: appendSystemChat(room, `تم تغيير اللعبة إلى: ${target?.title || newGameId}`),
-        };
-        break;
-      }
-      case 'kick_player': {
-        if (pid !== room.hostId) break;
-        const targetId = String(data.targetId || '');
-        if (!targetId || targetId === room.hostId) break;
-        clients.forEach((cMeta) => {
-          if (cMeta.roomCode === room!.code && cMeta.playerId === targetId) {
-            sendWs(cMeta.ws, { type: 'kicked' });
-            cMeta.roomCode = null;
-          }
-        });
-        const kicked = room.players.find((p) => p.id === targetId);
-        room = {
-          ...room,
-          players: room.players.filter((p) => p.id !== targetId),
-          messages: appendSystemChat(room, `تم إخراج ${kicked?.name || 'لاعب'} من الغرفة.`),
-        };
-        break;
-      }
-      case 'chat_message':
-      case 'send_chat': {
-        const sender = room.players.find((p) => p.id === pid);
-        const text = sanitizeText(String(data.text || ''), 240);
-        if (sender && text) {
-          room = {
-            ...room,
-            messages: [
-              ...room.messages,
-              {
-                id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-                senderId: sender.id,
-                senderName: sender.name,
-                senderAvatar: sender.avatar,
-                text,
-                timestamp: Date.now(),
-              },
-            ].slice(-80),
-          };
-        }
-        break;
-      }
-      case 'voice_signal': {
-        const targetId = String(data.targetId || '');
-        clients.forEach((cMeta) => {
-          if (cMeta.roomCode === room!.code && (!targetId || cMeta.playerId === targetId) && cMeta.playerId !== pid) {
-            sendWs(cMeta.ws, {
-              type: 'voice_signal',
-              fromId: pid,
-              signal: data.signal,
-            });
-          }
-        });
-        return;
-      }
-      case 'return_to_lobby': {
-        room = {
-          ...room,
-          status: 'lobby',
-          brokenTv: undefined,
-          ismHayawan: undefined,
-          barrah: undefined,
-          mafia: undefined,
-        };
-        break;
-      }
-      case 'start_game': {
-        if (pid !== room.hostId) break;
-        if (room.gameId === 'broken_tv') {
-          const pace = ([40, 60, 90].includes(Number(data.paceSeconds)) ? Number(data.paceSeconds) : 60) as 40 | 60 | 90;
-          const bt = createInitialBrokenTvState(room.players, pace);
-          bt.phase = 'write';
-          bt.roundDeadline = Date.now() + pace * 1000;
-          room = { ...room, status: 'playing', brokenTv: bt };
-        } else if (room.gameId === 'ism_hayawan') {
-          const rounds = Math.max(1, Math.min(50, Number(data.totalRounds || room.totalRounds || 5)));
-          const ism = createInitialIsmState(rounds, Boolean(room.isJudgeRoom), room.isJudgeRoom ? room.hostId : null);
-          ism.phase = 'letter_spin';
-          room = { ...room, status: 'playing', ismHayawan: ism };
-        } else if (room.gameId === 'barrah_salfa') {
-          room = startBarrahOnlineRound(room, String(data.categoryId || 'random_all'), dataStore.barrahCategories);
-        } else if (room.gameId === 'mafia_no_hakam') {
-          room = startMafiaOnlineRound(room);
-        }
-        break;
-      }
-      case 'broken_tv_submit': {
-        room = applyBrokenTvStepSubmission(room, pid, String(data.content || ''));
-        break;
-      }
-      case 'broken_tv_react': {
-        room = applyBrokenTvReaction(
-          room,
-          Number(data.chainIndex || 0),
-          Number(data.stepIndex || 0),
-          data.reaction as BrokenTvReactionType,
-          pid
-        );
-        break;
-      }
-      case 'broken_tv_advance_reveal': {
-        if (room.brokenTv && pid === room.hostId) {
-          const bt = room.brokenTv;
-          const chain = bt.chains[bt.revealChainIndex];
-          if (chain && bt.revealStepIndex + 1 < chain.steps.length) {
-            room = { ...room, brokenTv: { ...bt, revealStepIndex: bt.revealStepIndex + 1 } };
-          } else if (bt.revealChainIndex + 1 < bt.chains.length) {
-            room = { ...room, brokenTv: { ...bt, revealChainIndex: bt.revealChainIndex + 1, revealStepIndex: 0 } };
-          } else {
-            room = { ...room, brokenTv: { ...bt, phase: 'podium' } };
-          }
-        }
-        break;
-      }
-      case 'ism_hayawan_set_letter': {
-        if (room.ismHayawan && pid === room.hostId) {
-          const letter = String(data.letter || pickUnusedArabicLetter(room.ismHayawan.usedLetters));
-          room = {
-            ...room,
-            ismHayawan: {
-              ...room.ismHayawan,
-              currentLetter: letter,
-              usedLetters: [...room.ismHayawan.usedLetters, letter],
-              phase: 'writing',
-              stoppedByPlayerName: null,
-              answersByPlayer: {},
-              disputes: [],
-            },
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_sync_answers': {
-        if (room.ismHayawan) {
-          room = {
-            ...room,
-            ismHayawan: {
-              ...room.ismHayawan,
-              answersByPlayer: {
-                ...room.ismHayawan.answersByPlayer,
-                [pid]: data.answers as IsmPlayerAnswers,
-              },
-            },
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_stop': {
-        if (room.ismHayawan && room.ismHayawan.phase === 'writing') {
-          const stopper = room.players.find((p) => p.id === pid);
-          const mergedAnswers = {
-            ...room.ismHayawan.answersByPlayer,
-            ...(data.answers ? { [pid]: data.answers as IsmPlayerAnswers } : {}),
-          };
-          const stopperAnswers = mergedAnswers[pid];
-          if (!areAllIsmFieldsFilled(stopperAnswers)) {
-            sendWs(ws, { type: 'error', message: 'أكمل كتابة جميع الخانات الـ 5 قبل الضغط على ستوب!' });
-            return;
-          }
-          const updatedIsm: NonNullable<RoomState['ismHayawan']> = {
-            ...room.ismHayawan,
-            phase: 'scoring',
-            stoppedByPlayerName: stopper?.name || 'أحد اللاعبين',
-            answersByPlayer: mergedAnswers,
-          };
-          const { fieldScoresByPlayer, roundTotalsByPlayer, reasonsByPlayer } = computeIsmScores(updatedIsm, room.players);
-          updatedIsm.fieldScoresByPlayer = fieldScoresByPlayer;
-          updatedIsm.roundTotalsByPlayer = roundTotalsByPlayer;
-          updatedIsm.reasonsByPlayer = reasonsByPlayer;
-          updatedIsm.analyzedBy = 'saudi_arabic_index';
-          room = {
-            ...room,
-            ismHayawan: updatedIsm,
-            players: room.players.map((p) => ({
-              ...p,
-              score: p.score + (roundTotalsByPlayer[p.id] || 0),
-            })),
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_apply_ai_analysis': {
-        if (room.ismHayawan && pid === room.hostId) {
-          const nextFieldScores = data.fieldScoresByPlayer as Record<string, Record<IsmFieldKey, number>>;
-          const nextRoundTotals = data.roundTotalsByPlayer as Record<string, number>;
-          const nextReasons = data.reasonsByPlayer as Record<string, Record<IsmFieldKey, IsmFieldEvaluation>> | undefined;
-          const prevTotals = room.ismHayawan.roundTotalsByPlayer || {};
-          room = {
-            ...room,
-            players: room.players.map((p) => {
-              const prevPts = prevTotals[p.id] || 0;
-              const nextPts = nextRoundTotals?.[p.id] ?? prevPts;
-              return { ...p, score: Math.max(0, p.score - prevPts + nextPts) };
-            }),
-            ismHayawan: {
-              ...room.ismHayawan,
-              fieldScoresByPlayer: nextFieldScores || room.ismHayawan.fieldScoresByPlayer,
-              roundTotalsByPlayer: nextRoundTotals || room.ismHayawan.roundTotalsByPlayer,
-              reasonsByPlayer: nextReasons || room.ismHayawan.reasonsByPlayer,
-              analyzedBy: (data.analyzedBy as 'gemini_ai' | 'saudi_arabic_index' | 'manual') || 'gemini_ai',
-            },
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_set_field_score': {
-        if (room.ismHayawan && pid === room.hostId) {
-          const targetId = String(data.targetPlayerId || '');
-          const field = data.field as IsmFieldKey;
-          const newPts = Math.max(0, Math.min(10, Number(data.points || 0)));
-          const prevPts = room.ismHayawan.fieldScoresByPlayer[targetId]?.[field] || 0;
-          const diff = newPts - prevPts;
-          room = {
-            ...room,
-            players: room.players.map((p) =>
-              p.id === targetId ? { ...p, score: Math.max(0, p.score + diff) } : p
-            ),
-            ismHayawan: {
-              ...room.ismHayawan,
-              fieldScoresByPlayer: {
-                ...room.ismHayawan.fieldScoresByPlayer,
-                [targetId]: {
-                  ...(room.ismHayawan.fieldScoresByPlayer[targetId] || { name: 0, animal: 0, plant: 0, object: 0, country: 0 }),
-                  [field]: newPts,
-                },
-              },
-              roundTotalsByPlayer: {
-                ...room.ismHayawan.roundTotalsByPlayer,
-                [targetId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[targetId] || 0) + diff),
-              },
-            },
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_judge_score_adjust': {
-        if (room.ismHayawan && pid === room.hostId) {
-          const targetId = String(data.targetPlayerId || '');
-          const delta = Number(data.delta || 0);
-          room = {
-            ...room,
-            players: room.players.map((p) =>
-              p.id === targetId ? { ...p, score: Math.max(0, p.score + delta) } : p
-            ),
-            ismHayawan: {
-              ...room.ismHayawan,
-              roundTotalsByPlayer: {
-                ...room.ismHayawan.roundTotalsByPlayer,
-                [targetId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[targetId] || 0) + delta),
-              },
-            },
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_dispute': {
-        if (room.ismHayawan) {
-          const challenger = room.players.find((p) => p.id === pid);
-          const targetId = String(data.targetPlayerId || '');
-          const target = room.players.find((p) => p.id === targetId);
-          const field = data.field as IsmFieldKey;
-          const word = sanitizeText(String(data.word || ''), 60);
-          const reviewer = room.ismHayawan.isJudgeRoom && room.ismHayawan.judgeId
-            ? room.ismHayawan.judgeId
-            : (room.players.find((p) => p.id !== pid && p.id !== targetId)?.id || room.hostId);
-          room = {
-            ...room,
-            ismHayawan: {
-              ...room.ismHayawan,
-              disputes: [
-                ...room.ismHayawan.disputes,
-                {
-                  id: `dsp_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-                  targetPlayerId: targetId,
-                  targetPlayerName: target?.name || 'لاعب',
-                  field,
-                  word,
-                  challengerId: pid,
-                  challengerName: challenger?.name || 'لاعب',
-                  assignedReviewerId: reviewer,
-                  status: 'pending',
-                },
-              ],
-            },
-          };
-        }
-        break;
-      }
-      case 'ism_hayawan_resolve_dispute': {
-        if (room.ismHayawan) {
-          const disputeId = String(data.disputeId || '');
-          const approved = Boolean(data.approved);
-          const d = room.ismHayawan.disputes.find((x) => x.id === disputeId);
-          if (d && d.status === 'pending') {
-            const oldScore = room.ismHayawan.fieldScoresByPlayer[d.targetPlayerId]?.[d.field] || 0;
-            const newScore = approved ? 10 : 0;
-            const diff = newScore - oldScore;
-            room = {
-              ...room,
-              players: room.players.map((p) =>
-                p.id === d.targetPlayerId ? { ...p, score: Math.max(0, p.score + diff) } : p
-              ),
-              ismHayawan: {
-                ...room.ismHayawan,
-                disputes: room.ismHayawan.disputes.map((x) =>
-                  x.id === disputeId ? { ...x, status: approved ? 'approved' : 'rejected' } : x
-                ),
-                fieldScoresByPlayer: {
-                  ...room.ismHayawan.fieldScoresByPlayer,
-                  [d.targetPlayerId]: {
-                    ...(room.ismHayawan.fieldScoresByPlayer[d.targetPlayerId] || { name: 0, animal: 0, plant: 0, object: 0, country: 0 }),
-                    [d.field]: newScore,
-                  },
-                },
-                roundTotalsByPlayer: {
-                  ...room.ismHayawan.roundTotalsByPlayer,
-                  [d.targetPlayerId]: Math.max(0, (room.ismHayawan.roundTotalsByPlayer[d.targetPlayerId] || 0) + diff),
-                },
-              },
-            };
-          }
-        }
-        break;
-      }
-      case 'ism_hayawan_next_round': {
-        if (room.ismHayawan && pid === room.hostId) {
-          if (room.ismHayawan.currentRound >= room.ismHayawan.totalRounds) {
-            room = { ...room, ismHayawan: { ...room.ismHayawan, phase: 'game_over' } };
-          } else {
-            room = {
-              ...room,
-              ismHayawan: {
-                ...room.ismHayawan,
-                currentRound: room.ismHayawan.currentRound + 1,
-                phase: 'letter_spin',
-                stoppedByPlayerName: null,
-                answersByPlayer: {},
-                disputes: [],
-              },
-            };
-          }
-        }
-        break;
-      }
-      case 'barrah_mark_revealed': {
-        if (room.barrah && !room.barrah.revealedPlayerIds.includes(pid)) {
-          const revealedPlayerIds = [...room.barrah.revealedPlayerIds, pid];
-          const allReady = revealedPlayerIds.length >= room.players.length;
-          room = {
-            ...room,
-            barrah: {
-              ...room.barrah,
-              revealedPlayerIds,
-              phase: allReady ? 'questions_stage' : room.barrah.phase,
-            },
-          };
-        }
-        break;
-      }
-      case 'barrah_next_pair': {
-        if (room.barrah && pid === room.hostId) {
-          let pair = [...room.players].sort(() => Math.random() - 0.5);
-          if (room.players.length >= 3 && pair[0]?.id === room.barrah.askerId && pair[1]?.id === room.barrah.answererId) {
-            pair = [pair[1], pair[2] || pair[0]];
-          }
-          room = {
-            ...room,
-            barrah: {
-              ...room.barrah,
-              askerId: pair[0]?.id || room.barrah.askerId,
-              answererId: pair[1]?.id || room.barrah.answererId,
-            },
-          };
-        }
-        break;
-      }
-      case 'barrah_start_voting': {
-        if (room.barrah && pid === room.hostId) {
-          room = { ...room, barrah: { ...room.barrah, phase: 'voting_pass' } };
-        }
-        break;
-      }
-      case 'barrah_vote': {
-        if (room.barrah) {
-          const targetId = String(data.targetId || '');
-          if (targetId && targetId !== pid) {
-            const votesByVoter = { ...room.barrah.votesByVoter, [pid]: targetId };
-            const allVoted = Object.keys(votesByVoter).length >= room.players.length;
-            if (!allVoted) {
-              room = { ...room, barrah: { ...room.barrah, votesByVoter } };
-            } else {
-              const tally: Record<string, number> = {};
-              Object.values(votesByVoter).forEach((v) => { tally[v] = (tally[v] || 0) + 1; });
-              const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-              const topSuspect = sorted[0]?.[0];
-              const caught = topSuspect === room.barrah.spyId;
-              room = {
-                ...room,
-                barrah: {
-                  ...room.barrah,
-                  votesByVoter,
-                  phase: caught ? 'final_chance' : 'results',
-                  spyGuessDeadline: caught ? Date.now() + 25000 : null,
-                  winner: caught ? null : 'spy',
-                },
-              };
-            }
-          }
-        }
-        break;
-      }
-      case 'barrah_spy_guess': {
-        if (room.barrah && pid === room.barrah.spyId) {
-          const guess = String(data.word || '');
-          const won = guess === room.barrah.secretWord;
-          room = {
-            ...room,
-            barrah: {
-              ...room.barrah,
-              spyGuess: guess,
-              phase: 'results',
-              winner: won ? 'spy' : 'insiders',
-            },
-          };
-        }
-        break;
-      }
-      case 'mafia_mark_revealed': {
-        if (room.mafia && !room.mafia.revealedIds.includes(pid)) {
-          const revealedIds = [...room.mafia.revealedIds, pid];
-          const all = revealedIds.length >= room.players.length;
-          room = {
-            ...room,
-            mafia: { ...room.mafia, revealedIds, phase: all ? 'night' : 'role_reveal' },
-          };
-        }
-        break;
-      }
-      case 'mafia_night_action': {
-        if (room.mafia && room.mafia.phase === 'night') {
-          const currentMafia = room.mafia;
-          const role = currentMafia.rolesByPlayer[pid];
-          const targetId = String(data.targetId || '');
-          const nc = { ...currentMafia.nightChoices };
-          if (role === 'mafia') nc.mafiaTarget = targetId;
-          if (role === 'doctor') nc.doctorSave = targetId;
-          if (role === 'detective') nc.detectiveCheck = targetId;
-
-          const aliveRoles = currentMafia.aliveIds.map((id) => currentMafia.rolesByPlayer[id]);
-          const needMafia = aliveRoles.includes('mafia');
-          const needDoc = aliveRoles.includes('doctor');
-          const needDet = aliveRoles.includes('detective');
-          const done =
-            (!needMafia || Boolean(nc.mafiaTarget)) &&
-            (!needDoc || Boolean(nc.doctorSave)) &&
-            (!needDet || Boolean(nc.detectiveCheck));
-
-          if (!done) {
-            room = { ...room, mafia: { ...currentMafia, nightChoices: nc } };
-          } else {
-            const victimId = nc.mafiaTarget;
-            const saved = victimId && victimId === nc.doctorSave;
-            let aliveIds = [...currentMafia.aliveIds];
-            let summary = 'انقضت الليلة بسلام! نجح الطبيب في إنقاذ الضحية.';
-            if (victimId && !saved) {
-              aliveIds = aliveIds.filter((id) => id !== victimId);
-              const vName = room.players.find((p) => p.id === victimId)?.name || 'لاعب';
-              summary = `مع الأسف! استيقظت المدينة على إقصاء ${vName} ليلاً.`;
-            }
-            const aliveMafia = aliveIds.filter((id) => currentMafia.rolesByPlayer[id] === 'mafia').length;
-            const aliveCitizens = aliveIds.length - aliveMafia;
-            const winner = aliveMafia === 0 ? 'citizens' : aliveMafia >= aliveCitizens ? 'mafia' : null;
-            room = {
-              ...room,
-              mafia: {
-                ...currentMafia,
-                nightChoices: nc,
-                aliveIds,
-                lastNightSummary: summary,
-                phase: winner ? 'game_over' : 'day_announcement',
-                winner,
-              },
-            };
-          }
-        }
-        break;
-      }
-      case 'mafia_next_phase': {
-        if (room.mafia && pid === room.hostId) {
-          if (room.mafia.phase === 'day_announcement') {
-            room = { ...room, mafia: { ...room.mafia, phase: 'day_discussion' } };
-          } else if (room.mafia.phase === 'day_discussion') {
-            room = { ...room, mafia: { ...room.mafia, phase: 'day_voting', dayVotes: {} } };
-          }
-        }
-        break;
-      }
-      case 'mafia_day_vote': {
-        if (room.mafia && room.mafia.phase === 'day_voting' && room.mafia.aliveIds.includes(pid)) {
-          const currentMafia = room.mafia;
-          const targetId = String(data.targetId || '');
-          const dayVotes = { ...currentMafia.dayVotes, [pid]: targetId };
-          if (Object.keys(dayVotes).length < currentMafia.aliveIds.length) {
-            room = { ...room, mafia: { ...currentMafia, dayVotes } };
-          } else {
-            const counts: Record<string, number> = {};
-            Object.values(dayVotes).forEach((v) => { counts[v] = (counts[v] || 0) + 1; });
-            const eliminatedId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
-            const aliveIds = eliminatedId
-              ? currentMafia.aliveIds.filter((id) => id !== eliminatedId)
-              : currentMafia.aliveIds;
-            const aliveMafia = aliveIds.filter((id) => currentMafia.rolesByPlayer[id] === 'mafia').length;
-            const aliveCitizens = aliveIds.length - aliveMafia;
-            const winner = aliveMafia === 0 ? 'citizens' : aliveMafia >= aliveCitizens ? 'mafia' : null;
-            room = {
-              ...room,
-              mafia: {
-                ...currentMafia,
-                dayVotes,
-                aliveIds,
-                dayNumber: currentMafia.dayNumber + 1,
-                nightChoices: {},
-                phase: winner ? 'game_over' : 'night',
-                winner,
-              },
-            };
-          }
-        }
-        break;
-      }
-      default:
-        break;
+    if (!meta.roomCode && typeof data.roomCode === 'string' && data.roomCode) {
+      meta.roomCode = data.roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     }
+    if (!meta.roomCode) return;
+    const currentRoom = rooms.get(meta.roomCode);
+    if (!currentRoom) return;
 
-    rooms.set(room.code, room);
-    broadcastRoom(room.code);
+    const result = applyRoomActionOnServer(currentRoom, meta.playerId, data);
+    if (result.error) {
+      sendWs(ws, { type: 'error', message: result.error });
+      return;
+    }
+    if (result.stop) return;
+
+    rooms.set(currentRoom.code, result.room);
+    broadcastRoom(currentRoom.code);
   });
 
-  ws.on('close', () => handleDisconnect(ws));
-  ws.on('error', () => handleDisconnect(ws));
+  ws.on('close', () => handleDisconnect(ws, false));
+  ws.on('error', () => handleDisconnect(ws, false));
 });
 
 // ---------------------------------------------------------------------------
