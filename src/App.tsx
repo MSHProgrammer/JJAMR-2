@@ -26,6 +26,7 @@ import { ThemeCustomizerModal } from './components/ThemeCustomizerModal';
 import { AvatarCropperModal } from './components/AvatarCropperModal';
 import { ActiveCheatEntry, loadActiveCheats, SecretCodesModal } from './components/SecretCodesModal';
 import { FriendsAndNotificationsModal } from './components/FriendsAndNotificationsModal';
+import { RoomQrModal } from './components/RoomQrModal';
 import { CharacterReactionProvider } from './context/CharacterReactionContext';
 import { applyThemeConfig, loadThemeConfig } from './utils/themeManager';
 import { getOrCreateSessionPlayerId } from './network/socketClient';
@@ -97,6 +98,7 @@ export default function App() {
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showSecretCodesModal, setShowSecretCodesModal] = useState(false);
   const [showAvatarCropperModal, setShowAvatarCropperModal] = useState(false);
+  const [showQrGeneratorModal, setShowQrGeneratorModal] = useState(false);
   const [friendsModalTab, setFriendsModalTab] = useState<'friends' | 'notifications' | null>(null);
   const [maintenanceGame, setMaintenanceGame] = useState<GameConfig | null>(null);
 
@@ -298,6 +300,7 @@ export default function App() {
           onOpenNotifications={() => setFriendsModalTab('notifications')}
           onOpenThemeCustomizer={() => setShowThemeModal(true)}
           onOpenSecretCodes={() => setShowSecretCodesModal(true)}
+          onOpenQrGenerator={() => setShowQrGeneratorModal(true)}
           onOpenReport={() => setShowReportModal(true)}
         />
 
@@ -488,6 +491,14 @@ export default function App() {
               setShowAvatarCropperModal(false);
             }}
             onClose={() => setShowAvatarCropperModal(false)}
+          />
+        )}
+
+        {showQrGeneratorModal && (
+          <RoomQrModal
+            initialRoomCode={activeRoomCode || undefined}
+            onQuickJoinCode={handleJoinRoomDirect}
+            onClose={() => setShowQrGeneratorModal(false)}
           />
         )}
 

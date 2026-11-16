@@ -13,6 +13,8 @@ import {
   Wrench,
   UserPlus,
   Camera,
+  QrCode,
+  ScanLine,
 } from 'lucide-react';
 import { AppNotification, BarrahCategory, DubMicScene, GameConfig, RoomState } from '../types/jamr';
 import { getOrCreateSessionPlayerId, JamrSocketClient, SocketStatus } from '../network/socketClient';
@@ -24,6 +26,9 @@ import { MafiaNoHakamEngine } from './games/MafiaNoHakamEngine';
 import { SmartDetectiveEngine } from './games/SmartDetectiveEngine';
 import { DubMicEngine } from './games/DubMicEngine';
 import { VoiceChatBar } from './voice/VoiceChatBar';
+import { RoomQrModal } from './RoomQrModal';
+import { QrScannerModal } from './QrScannerModal';
+import { generateRoomQrDataUrl } from '../utils/qrHelper';
 import {
   AVATAR_BG_PRESETS,
   CHARACTER_AVATARS,
@@ -124,6 +129,9 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [showFloatingChat, setShowFloatingChat] = useState(false);
+  const [showRoomQrModal, setShowRoomQrModal] = useState(false);
+  const [showQrScannerModal, setShowQrScannerModal] = useState(false);
+  const [lobbyQrDataUrl, setLobbyQrDataUrl] = useState('');
 
   // Start options inside lobby
   const [brokenTvPace, setBrokenTvPace] = useState<40 | 60 | 90>(60);
@@ -217,6 +225,21 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       avatarBg,
     });
   }, [initialRoomCode, playerName, avatar, avatarBg, room]);
+
+  // Auto-generate crisp inline QR code preview whenever inside a room
+  useEffect(() => {
+    let cancelled = false;
+    if (!room?.code) {
+      setLobbyQrDataUrl('');
+      return;
+    }
+    void generateRoomQrDataUrl(room.code, { width: 220 }).then((url) => {
+      if (!cancelled) setLobbyQrDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [room?.code]);
 
   const isHost = room ? room.hostId === localPlayerId : false;
 
@@ -522,6 +545,17 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
+              type="button"
+              onClick={() => {
+                SoundFX.playClick();
+                setShowRoomQrModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-[#23140E] hover:bg-[#3A2218] text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <QrCode className="w-4 h-4 text-amber-400" />
+              <span>كود QR للدخول</span>
+            </button>
+            <button
               onClick={copyRoomCode}
               className="px-4 py-2.5 rounded-xl bg-[#FFF8EE] hover:bg-amber-100 border border-amber-300 text-[#23140E] font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
@@ -559,6 +593,41 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Instant Scan QR Card for Fast Living-Room Joining */}
+        {lobbyQrDataUrl && (
+          <div
+            onClick={() => {
+              SoundFX.playClick();
+              setShowRoomQrModal(true);
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') setShowRoomQrModal(true);
+            }}
+            className="rounded-3xl bg-gradient-to-l from-[#FFF8EE] via-white to-amber-50 border-2 border-amber-200 hover:border-orange-400 p-4 flex flex-wrap items-center justify-between gap-4 cursor-pointer transition shadow-xs"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-white p-1.5 rounded-2xl border-2 border-amber-200 shadow-xs shrink-0">
+                <img src={lobbyQrDataUrl} alt={`QR ${room.code}`} className="w-16 h-16 rounded-lg" />
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm font-black text-[#23140E] flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-orange-500" />
+                  <span>دخول سريع بمسح كود QR</span>
+                </div>
+                <p className="text-xs font-readex text-[#5A3E32]">
+                  خلّ ربعك يوجّهون كاميرا الجوال على الكود ليدخلوا الغرفة{' '}
+                  <span className="font-mono font-black text-orange-700">{room.code}</span> فوراً بدون كتابة الرمز!
+                </p>
+              </div>
+            </div>
+            <span className="px-4 py-2 rounded-xl bg-orange-500 text-white text-xs font-black shrink-0 shadow-xs">
+              تكبير وتحميل QR 🔍
+            </span>
+          </div>
+        )}
 
         {/* Live Browser-to-Browser WebRTC Voice Chat */}
         <VoiceChatBar
@@ -773,6 +842,15 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             </div>
           </div>
         </div>
+
+        {showRoomQrModal && (
+          <RoomQrModal
+            initialRoomCode={room.code}
+            gameTitle={currentGame?.title}
+            gameIcon={currentGame?.icon}
+            onClose={() => setShowRoomQrModal(false)}
+          />
+        )}
       </div>
     );
   }
@@ -1022,6 +1100,18 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             >
               {isBusy ? 'جاري الدخول للغرفة...' : 'ادخل الغرفة الآن ⚡'}
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                SoundFX.playClick();
+                setShowQrScannerModal(true);
+              }}
+              className="w-full py-3.5 rounded-2xl bg-[#FFF8EE] hover:bg-amber-100 border-2 border-amber-300 text-[#23140E] font-black text-sm flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <ScanLine className="w-4 h-4 text-orange-500" />
+              <span>مسح كود QR بالكاميرا للدخول الفوري 📷</span>
+            </button>
           </div>
         )}
 
@@ -1039,6 +1129,27 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               : 'اتصال الخادم جاهز'}
         </div>
       </div>
+
+      {showQrScannerModal && (
+        <QrScannerModal
+          onScannedRoomCode={(scannedCode) => {
+            setShowQrScannerModal(false);
+            setJoinCode(scannedCode);
+            setErrorMsg('');
+            setIsBusy(true);
+            const cleanName = guestName.trim() || playerName || 'ضيف';
+            void clientRef.current
+              ?.joinRoom({
+                roomCode: scannedCode,
+                playerName: cleanName,
+                avatar,
+                avatarBg,
+              })
+              .finally(() => setIsBusy(false));
+          }}
+          onClose={() => setShowQrScannerModal(false)}
+        />
+      )}
     </div>
   );
 };

@@ -14,6 +14,7 @@ import {
   KeyRound,
   AlertTriangle,
   Camera,
+  QrCode,
 } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
 import { JamrFlameLogo, FestiveGarlandStrip } from './FestiveDecor';
@@ -45,6 +46,7 @@ interface HeaderProps {
   onOpenNotifications: () => void;
   onOpenThemeCustomizer: () => void;
   onOpenSecretCodes: () => void;
+  onOpenQrGenerator: () => void;
   onOpenReport: () => void;
 }
 
@@ -85,6 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   onOpenThemeCustomizer,
   onOpenSecretCodes,
+  onOpenQrGenerator,
   onOpenReport,
 }) => {
   const [editingName, setEditingName] = useState(false);
@@ -414,6 +417,19 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <KeyRound className="w-4 h-4 text-amber-600" />
                   <span>أكواد سرية 🔐</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenQrGenerator();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4 text-orange-500" />
+                  <span>منشئ QR للغرف 📱</span>
                 </button>
 
                 <div className="border-t border-amber-100 my-1" />
