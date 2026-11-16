@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { X, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { GameConfig } from '../types/jamr';
+import { BugReport, GameConfig } from '../types/jamr';
 import { SoundFX } from '../utils/soundFx';
+import { apiFetchJson } from '../utils/apiClient';
+import { loadLocalReports, saveLocalReports } from '../utils/localFallbackStore';
 
 interface BugReportModalProps {
   games: GameConfig[];
@@ -21,6 +23,7 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
   const [contact, setContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [savedLocallyOnly, setSavedLocallyOnly] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,6 +35,8 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
     }
     setSubmitting(true);
     setError('');
+    setSavedLocallyOnly(false);
+
     const payload = {
       type,
       gameId,
@@ -40,53 +45,45 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
       reporterName: reporterName.trim() || 'لاعب',
       contact: contact.trim(),
     };
-    try {
-      const sendReq = () =>
-        fetch('/api/reports', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
 
-      let res = await sendReq();
-      if ([502, 503, 504].includes(res.status)) {
-        await new Promise((r) => window.setTimeout(r, 1200));
-        res = await sendReq();
-      }
+    const result = await apiFetchJson<{ ok?: boolean; error?: string }>(
+      '/api/reports',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      { unlockStorageOnGesture: true }
+    );
 
-      const rawText = await res.text();
-      let json: { error?: string; ok?: boolean } | null = null;
-      try {
-        json = rawText ? (JSON.parse(rawText) as { error?: string; ok?: boolean }) : null;
-      } catch {
-        json = null;
-      }
+    setSubmitting(false);
 
-      // If backend /api/reports is unavailable on a static host (non-JSON 404/405), persist locally instead of failing
-      if (!json && (res.status === 404 || res.status === 405)) {
-        try {
-          const prev = JSON.parse(window.localStorage.getItem('jamr_local_reports_v1') || '[]');
-          const entry = { id: `rep_local_${Date.now()}`, ...payload, status: 'new', createdAt: new Date().toISOString() };
-          window.localStorage.setItem('jamr_local_reports_v1', JSON.stringify([entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 50)));
-        } catch {
-          // ignore storage errors
-        }
-        SoundFX.playCorrect();
-        setSent(true);
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error(json?.error || `تعذّر إرسال البلاغ (${res.status})`);
-      }
+    if (result.ok && result.data?.ok) {
       SoundFX.playCorrect();
       setSent(true);
-    } catch (err) {
-      SoundFX.playWrong();
-      setError(err instanceof Error ? err.message : 'حدث خطأ أثناء الاتصال بالخادم، حاول مجدداً.');
-    } finally {
-      setSubmitting(false);
+      return;
     }
+
+    if (result.isHtmlOrStatic || result.networkError) {
+      const localEntry: BugReport = {
+        id: `rep_local_${Date.now()}`,
+        type: payload.type,
+        gameId: payload.gameId,
+        gameTitle: payload.gameTitle,
+        description: payload.description,
+        reporterName: payload.reporterName,
+        contact: payload.contact || undefined,
+        status: 'new',
+        createdAt: new Date().toISOString(),
+      };
+      saveLocalReports([localEntry, ...loadLocalReports()]);
+      SoundFX.playCorrect();
+      setSavedLocallyOnly(true);
+      setSent(true);
+      return;
+    }
+
+    SoundFX.playWrong();
+    setError(String(result.data?.error || `تعذّر إرسال البلاغ (${result.status}).`));
   };
 
   return (
@@ -121,7 +118,9 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
             </div>
             <h3 className="text-xl font-black text-[#23140E]">تم استلام بلاغك بنجاح! ✅</h3>
             <p className="text-sm text-[#5A3E32] font-readex">
-              وصل بلاغك إلى لوحة الإدارة مباشرةً. شكراً لمساهمتك في تطوير منصة جَمْر!
+              {savedLocallyOnly
+                ? 'تم حفظ بلاغك في السجل المحلي ويظهر في لوحة الإدارة على هذا الجهاز. لمزامنته مع قاعدة بيانات الخادم افتح المنصة في تبويب مستقل.'
+                : 'وصل بلاغك إلى لوحة الإدارة مباشرةً. شكراً لمساهمتك في تطوير منصة جَمْر!'}
             </p>
             <button
               type="button"

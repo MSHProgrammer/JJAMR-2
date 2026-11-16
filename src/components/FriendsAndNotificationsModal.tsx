@@ -11,11 +11,14 @@ import {
   Users,
   X,
   XCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { AppNotification } from '../types/jamr';
 import { CharacterAvatar } from './CharacterAvatar';
 import { SoundFX } from '../utils/soundFx';
 import { getOrCreateSessionPlayerId } from '../network/socketClient';
+import { apiFetchJson } from '../utils/apiClient';
+import { LOCAL_USER_KEY } from '../utils/localFallbackStore';
 
 export interface FriendSummary {
   username: string;
@@ -71,26 +74,30 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
   const [incoming, setIncoming] = useState<FriendSummary[]>([]);
   const [outgoing, setOutgoing] = useState<FriendSummary[]>([]);
   const [registered, setRegistered] = useState(Boolean(username));
+  const [offlineNotice, setOfflineNotice] = useState(false);
 
   const fetchFriendsState = async (targetUser: string) => {
     if (!targetUser) return;
-    try {
-      const res = await fetch(`/api/friends/state?username=${encodeURIComponent(targetUser)}`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data?.ok) {
-        setRegistered(Boolean(data.registered));
-        setFriends(Array.isArray(data.friends) ? data.friends : []);
-        setIncoming(Array.isArray(data.incomingRequests) ? data.incomingRequests : []);
-        setOutgoing(Array.isArray(data.outgoingRequests) ? data.outgoingRequests : []);
-        if (Array.isArray(data.notifications)) {
-          onNotificationsChange(data.notifications);
-        }
+    const res = await apiFetchJson<{
+      ok?: boolean;
+      registered?: boolean;
+      friends?: FriendSummary[];
+      incomingRequests?: FriendSummary[];
+      outgoingRequests?: FriendSummary[];
+      notifications?: AppNotification[];
+    }>(`/api/friends/state?username=${encodeURIComponent(targetUser)}`);
+
+    if (res.ok && res.data?.ok) {
+      setOfflineNotice(false);
+      setRegistered(Boolean(res.data.registered));
+      setFriends(Array.isArray(res.data.friends) ? res.data.friends : []);
+      setIncoming(Array.isArray(res.data.incomingRequests) ? res.data.incomingRequests : []);
+      setOutgoing(Array.isArray(res.data.outgoingRequests) ? res.data.outgoingRequests : []);
+      if (Array.isArray(res.data.notifications)) {
+        onNotificationsChange(res.data.notifications);
       }
-    } catch {
-      // ignore
+    } else if (res.isHtmlOrStatic || res.networkError) {
+      setOfflineNotice(true);
     }
   };
 
@@ -110,10 +117,12 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
     setRegistering(true);
     setHandleError('');
     setHandleSuccess('');
-    try {
-      const res = await fetch('/api/users/register', {
+    setOfflineNotice(false);
+
+    const res = await apiFetchJson<{ ok?: boolean; error?: string }>(
+      '/api/users/register',
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: cleaned,
           playerId: getOrCreateSessionPlayerId(),
@@ -121,11 +130,16 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
           avatar,
           avatarBg,
         }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.ok) {
+      },
+      { unlockStorageOnGesture: true }
+    );
+
+    setRegistering(false);
+
+    if (!res.isHtmlOrStatic && !res.networkError && res.data) {
+      if (!res.ok || !res.data.ok) {
         SoundFX.playWrong();
-        setHandleError(String(json?.error || 'تعذر حجز اليوزر نيم.'));
+        setHandleError(String(res.data.error || 'تعذر حجز اليوزر نيم.'));
         return;
       }
       SoundFX.playCorrect();
@@ -133,11 +147,25 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
       setRegistered(true);
       setHandleSuccess(`تم توثيق اليوزر نيم الفريد الخاص بك: @${cleaned} 🎉`);
       void fetchFriendsState(cleaned);
-    } catch {
-      setHandleError('حدث خطأ في الاتصال بالخادم.');
-    } finally {
-      setRegistering(false);
+      return;
     }
+
+    // Save locally if static/cookie-blocked iframe prevents POST /api/users/register
+    try {
+      window.localStorage.setItem(
+        LOCAL_USER_KEY,
+        JSON.stringify({ username: cleaned, displayName, avatar, avatarBg, savedAt: Date.now() })
+      );
+    } catch {
+      // ignore
+    }
+    SoundFX.playCorrect();
+    onUsernameSaved(cleaned);
+    setRegistered(true);
+    setOfflineNotice(true);
+    setHandleSuccess(
+      `تم حفظ اليوزر نيم @${cleaned} محلياً! لمزامنة الأصدقاء أونلاين افتح المنصة في تبويب مستقل.`
+    );
   };
 
   const sendFriendRequest = async (e: React.FormEvent) => {
@@ -153,26 +181,36 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
     }
     setLoadingAction(true);
     setFriendMsg(null);
-    try {
-      const res = await fetch('/api/friends/request', {
+
+    const res = await apiFetchJson<{ ok?: boolean; message?: string; error?: string }>(
+      '/api/friends/request',
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fromUsername: username, targetUsername: target }),
+      },
+      { unlockStorageOnGesture: true }
+    );
+
+    setLoadingAction(false);
+
+    if (res.isHtmlOrStatic || res.networkError) {
+      setOfflineNotice(true);
+      SoundFX.playWrong();
+      setFriendMsg({
+        ok: false,
+        text: 'المتصفح يمنع إرسال الطلب للخادم من داخل الإطار المضمّن — افتح المنصة في تبويب مستقل بالزر أعلاه.',
       });
-      const json = await res.json();
-      if (!res.ok || !json?.ok) {
-        SoundFX.playWrong();
-        setFriendMsg({ ok: false, text: String(json?.error || 'تعذر إرسال الطلب') });
-      } else {
-        SoundFX.playCorrect();
-        setSearchUsername('');
-        setFriendMsg({ ok: true, text: String(json.message) });
-        void fetchFriendsState(username);
-      }
-    } catch {
-      setFriendMsg({ ok: false, text: 'خطأ في الاتصال بالخادم.' });
-    } finally {
-      setLoadingAction(false);
+      return;
+    }
+
+    if (!res.ok || !res.data?.ok) {
+      SoundFX.playWrong();
+      setFriendMsg({ ok: false, text: String(res.data?.error || 'تعذر إرسال الطلب') });
+    } else {
+      SoundFX.playCorrect();
+      setSearchUsername('');
+      setFriendMsg({ ok: true, text: String(res.data.message) });
+      void fetchFriendsState(username);
     }
   };
 
@@ -181,11 +219,14 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
       setFriendMsg({ ok: false, text: 'أنشئ يوزر نيم خاص بك أولاً لقبول الطلبات!' });
       return;
     }
-    await fetch('/api/friends/respond', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, fromUsername: fromUser, accept }),
-    });
+    await apiFetchJson(
+      '/api/friends/respond',
+      {
+        method: 'POST',
+        body: JSON.stringify({ username, fromUsername: fromUser, accept }),
+      },
+      { unlockStorageOnGesture: true }
+    );
     SoundFX.playClick();
     void fetchFriendsState(username);
   };
@@ -195,31 +236,39 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
       setFriendMsg({ ok: false, text: 'افتح أو انضم لغرفة أونلاين أولاً لتتمكن من دعوة أصدقائك!' });
       return;
     }
-    const res = await fetch('/api/friends/invite-room', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fromUsername: username,
-        targetUsername: targetUser,
-        roomCode: activeRoomCode,
-      }),
-    });
-    const json = await res.json();
-    if (res.ok && json?.ok) {
+    const res = await apiFetchJson<{ ok?: boolean; message?: string; error?: string }>(
+      '/api/friends/invite-room',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          fromUsername: username,
+          targetUsername: targetUser,
+          roomCode: activeRoomCode,
+        }),
+      },
+      { unlockStorageOnGesture: true }
+    );
+    if (res.ok && res.data?.ok) {
       SoundFX.playCorrect();
-      setFriendMsg({ ok: true, text: String(json.message) });
+      setFriendMsg({ ok: true, text: String(res.data.message) });
+    } else if (res.isHtmlOrStatic || res.networkError) {
+      setOfflineNotice(true);
+      setFriendMsg({ ok: false, text: 'افتح المنصة في تبويب مستقل لإرسال دعوات الأصدقاء عبر الخادم.' });
     } else {
-      setFriendMsg({ ok: false, text: String(json?.error || 'تعذر إرسال الدعوة') });
+      setFriendMsg({ ok: false, text: String(res.data?.error || 'تعذر إرسال الدعوة') });
     }
   };
 
   const markAllRead = async () => {
     if (!username) return;
-    await fetch('/api/notifications/read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
-    });
+    await apiFetchJson(
+      '/api/notifications/read',
+      {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      },
+      { unlockStorageOnGesture: true }
+    );
     onNotificationsChange(notifications.map((n) => ({ ...n, read: true })));
   };
 
@@ -297,6 +346,23 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
 
         {/* Body */}
         <div className="p-5 overflow-y-auto space-y-5 flex-1">
+          {offlineNotice && (
+            <div className="rounded-2xl bg-amber-50 border border-amber-300 p-3.5 text-xs text-amber-900 space-y-2">
+              <div className="font-bold leading-relaxed">
+                المتصفح يقيّد كوكيز الجلسة داخل الإطار المضمّن عند الاتصال بالخادم، لذا تم التبديل للحفظ المحلي مؤقتاً.
+              </div>
+              <a
+                href={typeof window !== 'undefined' ? window.location.href : '/'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-[11px]"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>افتح المنصة في تبويب مستقل لمزامنة الأصدقاء بالخادم ↗</span>
+              </a>
+            </div>
+          )}
+
           {/* Mandatory Unique Username Card */}
           <div className="rounded-2xl bg-[#FFF8EE] border-2 border-amber-200 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

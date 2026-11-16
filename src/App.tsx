@@ -30,6 +30,8 @@ import { RoomQrModal } from './components/RoomQrModal';
 import { CharacterReactionProvider } from './context/CharacterReactionContext';
 import { applyThemeConfig, loadThemeConfig } from './utils/themeManager';
 import { getOrCreateSessionPlayerId } from './network/socketClient';
+import { apiFetchJson } from './utils/apiClient';
+import { loadLocalStoreSnapshot } from './utils/localFallbackStore';
 import {
   DEFAULT_AVATAR_BG,
   DEFAULT_AVATAR_ID,
@@ -108,29 +110,49 @@ export default function App() {
   }, []);
 
   const fetchCatalogData = useCallback(async () => {
-    try {
-      const [catRes, jamRes] = await Promise.all([
-        fetch('/api/catalog', { cache: 'no-store' }),
-        fetch('/api/jamrain/data', { cache: 'no-store' }),
-      ]);
-      if (catRes.ok) {
-        const cat = await catRes.json();
-        if (Array.isArray(cat.games) && cat.games.length > 0) setGames(cat.games);
-        if (Array.isArray(cat.barrahCategories) && cat.barrahCategories.length > 0) {
-          setBarrahCategories(cat.barrahCategories);
-        }
-        if (Array.isArray(cat.dubScenes) && cat.dubScenes.length > 0) {
-          setDubScenes(cat.dubScenes);
-        }
+    const [catRes, jamRes] = await Promise.all([
+      apiFetchJson<{
+        games?: GameConfig[];
+        barrahCategories?: BarrahCategory[];
+        dubScenes?: DubMicScene[];
+      }>('/api/catalog'),
+      apiFetchJson<{
+        sections?: Section[];
+        topics?: Topic[];
+        questions?: Question[];
+      }>('/api/jamrain/data'),
+    ]);
+
+    if (catRes.ok && catRes.data) {
+      if (Array.isArray(catRes.data.games) && catRes.data.games.length > 0) setGames(catRes.data.games);
+      if (Array.isArray(catRes.data.barrahCategories) && catRes.data.barrahCategories.length > 0) {
+        setBarrahCategories(catRes.data.barrahCategories);
       }
-      if (jamRes.ok) {
-        const jam = await jamRes.json();
-        if (Array.isArray(jam.sections) && jam.sections.length > 0) setSections(jam.sections);
-        if (Array.isArray(jam.topics) && jam.topics.length > 0) setTopics(jam.topics);
-        if (Array.isArray(jam.questions) && jam.questions.length > 0) setQuestions(jam.questions);
+      if (Array.isArray(catRes.data.dubScenes) && catRes.data.dubScenes.length > 0) {
+        setDubScenes(catRes.data.dubScenes);
       }
-    } catch {
-      // Fall back smoothly to local built-in datasets
+    } else if (catRes.isHtmlOrStatic || catRes.networkError) {
+      const localSnap = loadLocalStoreSnapshot();
+      if (localSnap.games.length > 0) setGames(localSnap.games);
+      if (localSnap.barrahCategories.length > 0) setBarrahCategories(localSnap.barrahCategories);
+      if (Array.isArray(localSnap.dubScenes) && localSnap.dubScenes.length > 0) {
+        setDubScenes(localSnap.dubScenes);
+      }
+    }
+
+    if (jamRes.ok && jamRes.data) {
+      if (Array.isArray(jamRes.data.sections) && jamRes.data.sections.length > 0) {
+        setSections(jamRes.data.sections);
+      }
+      if (Array.isArray(jamRes.data.topics) && jamRes.data.topics.length > 0) {
+        setTopics(jamRes.data.topics);
+      }
+      if (Array.isArray(jamRes.data.questions) && jamRes.data.questions.length > 0) {
+        setQuestions(jamRes.data.questions);
+      }
+    } else if (jamRes.isHtmlOrStatic || jamRes.networkError) {
+      const localSnap = loadLocalStoreSnapshot();
+      if (localSnap.sections.length > 0) setSections(localSnap.sections);
     }
   }, []);
 
@@ -141,30 +163,22 @@ export default function App() {
   // Sync user presence & pull unread notifications periodically when @username is registered
   const syncUserPresence = useCallback(async () => {
     if (!username) return;
-    try {
-      await fetch('/api/users/sync-presence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          playerId: getOrCreateSessionPlayerId(),
-          displayName: playerName || 'لاعب جَمْر',
-          avatar: playerAvatar,
-          avatarBg: playerAvatarBg,
-          roomCode: activeRoomCode,
-        }),
-      });
-      const res = await fetch(`/api/friends/state?username=${encodeURIComponent(username)}`, {
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.ok && Array.isArray(data.notifications)) {
-          setNotifications(data.notifications);
-        }
-      }
-    } catch {
-      // ignore offline transient error
+    await apiFetchJson('/api/users/sync-presence', {
+      method: 'POST',
+      body: JSON.stringify({
+        username,
+        playerId: getOrCreateSessionPlayerId(),
+        displayName: playerName || 'لاعب جَمْر',
+        avatar: playerAvatar,
+        avatarBg: playerAvatarBg,
+        roomCode: activeRoomCode,
+      }),
+    });
+    const res = await apiFetchJson<{ ok?: boolean; notifications?: AppNotification[] }>(
+      `/api/friends/state?username=${encodeURIComponent(username)}`
+    );
+    if (res.ok && res.data?.ok && Array.isArray(res.data.notifications)) {
+      setNotifications(res.data.notifications);
     }
   }, [username, playerName, playerAvatar, playerAvatarBg, activeRoomCode]);
 
