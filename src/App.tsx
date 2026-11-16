@@ -19,7 +19,6 @@ import { NameOnboardingModal } from './components/NameOnboardingModal';
 import { HowToPlayModal } from './components/HowToPlayModal';
 import { BugReportModal } from './components/BugReportModal';
 import { MaintenanceModal } from './components/MaintenanceModal';
-import { AdminPanel } from './components/AdminPanel';
 import { OfflineGameRunner } from './components/OfflineGameRunner';
 import { OnlineGameView } from './components/OnlineGameView';
 import { ThemeCustomizerModal } from './components/ThemeCustomizerModal';
@@ -39,11 +38,12 @@ import {
   sanitizeAvatarId,
 } from './data/characterAvatars';
 
+const ADMIN_PORTAL_URL = 'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app';
+
 type ViewMode =
   | { kind: 'home' }
   | { kind: 'offline'; game: GameConfig; matchKey: number }
-  | { kind: 'online'; tab: 'create' | 'join'; gameId?: string; roomCode?: string; matchKey: number }
-  | { kind: 'admin' };
+  | { kind: 'online'; tab: 'create' | 'join'; gameId?: string; roomCode?: string; matchKey: number };
 
 export default function App() {
   const [playerName, setPlayerName] = useState<string>(() => {
@@ -430,12 +430,6 @@ export default function App() {
             />
           )}
 
-          {view.kind === 'admin' && (
-            <AdminPanel
-              onDataUpdated={() => void fetchCatalogData()}
-              onExit={() => setView({ kind: 'home' })}
-            />
-          )}
         </main>
 
         <Footer onOpenReport={() => setShowReportModal(true)} />
@@ -476,7 +470,14 @@ export default function App() {
 
         {showSecretCodesModal && (
           <SecretCodesModal
-            onUnlockAdmin={() => setView({ kind: 'admin' })}
+            onUnlockAdmin={(enteredCode) => {
+              const targetUrl = `${ADMIN_PORTAL_URL}/#code=${encodeURIComponent(enteredCode)}`;
+              try {
+                (window.top || window).location.href = targetUrl;
+              } catch {
+                window.location.href = targetUrl;
+              }
+            }}
             onCheatActivated={(updated) => setActiveCheats(updated)}
             onClose={() => setShowSecretCodesModal(false)}
           />

@@ -16,6 +16,11 @@ export interface ActiveCheatEntry {
 }
 
 const CHEATS_STORAGE_KEY = 'jamr_active_cheats_v1';
+const ADMIN_PORTAL_URL = 'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app';
+
+export function buildAdminPortalUrl(enteredCode: string): string {
+  return `${ADMIN_PORTAL_URL}/#code=${encodeURIComponent(enteredCode)}`;
+}
 
 export function loadActiveCheats(): ActiveCheatEntry[] {
   try {
@@ -37,7 +42,7 @@ export function saveActiveCheats(list: ActiveCheatEntry[]): void {
 }
 
 interface SecretCodesModalProps {
-  onUnlockAdmin: () => void;
+  onUnlockAdmin: (enteredCode: string) => void;
   onCheatActivated?: (cheats: ActiveCheatEntry[]) => void;
   onClose: () => void;
 }
@@ -51,6 +56,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [apiBlockedHint, setApiBlockedHint] = useState(false);
+  const [portalRedirectUrl, setPortalRedirectUrl] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [activeCheats, setActiveCheats] = useState<ActiveCheatEntry[]>(() => loadActiveCheats());
 
@@ -82,15 +88,15 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     setCode('');
   };
 
-  const openLocalAdminSession = () => {
+  const redirectToAdminPortal = (enteredCode: string) => {
     SoundFX.playCorrect();
-    try {
-      window.sessionStorage.setItem('jamr_admin_token', 'local_admin_session');
-    } catch {
-      // ignore
-    }
-    onClose();
-    onUnlockAdmin();
+    const cleanCode = enteredCode.trim();
+    const targetUrl = buildAdminPortalUrl(cleanCode);
+    setPortalRedirectUrl(targetUrl);
+    setError('');
+    setApiBlockedHint(false);
+    setSuccessMsg('تم التحقق من رمز الإدارة! جاري نقلك إلى بوابة الإدارة المستقلة...');
+    onUnlockAdmin(cleanCode);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,6 +109,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     setLoading(true);
     setError('');
     setApiBlockedHint(false);
+    setPortalRedirectUrl('');
     setSuccessMsg('');
 
     const result = await apiFetchJson<{
@@ -133,15 +140,8 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
         return;
       }
 
-      if (json.kind === 'admin' && json.token) {
-        SoundFX.playCorrect();
-        try {
-          window.sessionStorage.setItem('jamr_admin_token', String(json.token));
-        } catch {
-          // ignore
-        }
-        onClose();
-        onUnlockAdmin();
+      if (json.kind === 'admin') {
+        redirectToAdminPortal(trimmed);
         return;
       }
 
@@ -175,7 +175,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     }
 
     if (trimmed.toLowerCase() === 'jamr2026') {
-      openLocalAdminSession();
+      redirectToAdminPortal(trimmed);
       return;
     }
 
@@ -231,6 +231,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
                 setCode(e.target.value);
                 setError('');
                 setApiBlockedHint(false);
+                setPortalRedirectUrl('');
               }}
               placeholder="اكتب الكود هنا..."
               className="w-full rounded-xl bg-[#FFF8EE] border-2 border-amber-200 px-4 py-3 text-center text-base font-black tracking-wider text-[#23140E] focus:outline-none focus:border-orange-500"
@@ -242,24 +243,40 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
                 {apiBlockedHint && (
                   <div className="flex flex-col gap-2 pt-1">
                     <a
+                      href={buildAdminPortalUrl(code.trim())}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2 px-3 rounded-lg bg-gradient-to-l from-orange-500 to-amber-500 hover:brightness-105 text-white font-black text-[11px] inline-flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>فتح بوابة الإدارة المستقلة بهذا الكود ↗</span>
+                    </a>
+                    <a
                       href={typeof window !== 'undefined' ? window.location.href : '/'}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full py-2 px-3 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-black text-[11px] inline-flex items-center justify-center gap-1.5 shadow-xs"
+                      className="w-full py-2 px-3 rounded-lg bg-white hover:bg-amber-50 border border-amber-300 text-[#23140E] font-black text-[11px] inline-flex items-center justify-center gap-1.5"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>افتح المنصة في تبويب مستقل ليتم التحقق من الكود بالخادم ↗</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-orange-500" />
+                      <span>أو افتح المنصة في تبويب مستقل للتحقق من الكود ↗</span>
                     </a>
-                    <button
-                      type="button"
-                      onClick={openLocalAdminSession}
-                      className="w-full py-2 px-3 rounded-lg bg-white hover:bg-amber-50 border border-amber-300 text-[#23140E] font-black text-[11px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Shield className="w-3.5 h-3.5 text-orange-500" />
-                      <span>أو الدخول للوحة الإدارة بالوضع المحلي السريع 🛠️</span>
-                    </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {portalRedirectUrl && (
+              <div className="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-3 text-xs font-bold text-amber-950 text-center space-y-2">
+                <div>إذا لم يتم تحويلك تلقائياً خلال لحظة، اضغط للفتح في تبويب جديد:</div>
+                <a
+                  href={portalRedirectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-l from-orange-500 to-amber-500 hover:brightness-105 text-white font-black text-xs inline-flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>فتح بوابة الإدارة المستقلة الآن ↗</span>
+                </a>
               </div>
             )}
 
