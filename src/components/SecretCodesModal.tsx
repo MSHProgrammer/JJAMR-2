@@ -61,15 +61,37 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     setError('');
     setSuccessMsg('');
     try {
-      const res = await fetch('/api/cheats/redeem', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: trimmed }),
-      });
-      const json = await res.json();
+      const attemptFetch = async () =>
+        fetch('/api/cheats/redeem', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: trimmed }),
+        });
+
+      let res = await attemptFetch();
+      if ([502, 503, 504].includes(res.status)) {
+        await new Promise((r) => window.setTimeout(r, 1200));
+        res = await attemptFetch();
+      }
+
+      const rawText = await res.text();
+      let json: Record<string, any> | null = null;
+      try {
+        json = rawText ? (JSON.parse(rawText) as Record<string, any>) : null;
+      } catch {
+        json = null;
+      }
+
+      // If running on a static host (e.g. Cloudflare Pages) where /api POST returns HTML 404/405
+      if (!json && (res.status === 404 || res.status === 405)) {
+        SoundFX.playWrong();
+        setError('واجهة الخادم الخلفي (/api) غير متاحة على الاستضافة الثابتة الحالية؛ افتح المنصة عبر خادم التطبيق الكامل.');
+        return;
+      }
+
       if (!res.ok || !json?.ok) {
         SoundFX.playWrong();
-        setError(String(json?.error || 'الكود غير صحيح أو منتهي الصلاحية.'));
+        setError(String(json?.error || `الكود غير صحيح أو تعذّر التحقق (${res.status}).`));
         return;
       }
 

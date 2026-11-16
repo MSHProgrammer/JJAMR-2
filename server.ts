@@ -754,13 +754,18 @@ function pushUserNotification(username: string, notification: AppNotification) {
   });
 }
 
+function getConfiguredAdminPassword(): string {
+  const raw = (process.env.ADMIN_PASSWORD || '').trim().replace(/^['"]|['"]$/g, '').trim();
+  return normalizeDigits(raw || 'jamr2026');
+}
+
 app.post('/api/cheats/redeem', (req, res) => {
   const rawCode = normalizeDigits(String(req.body?.code || '').trim());
   if (!rawCode) {
     return res.status(400).json({ ok: false, error: 'أدخل الكود السري أولاً.' });
   }
 
-  const configuredPassword = normalizeDigits((process.env.ADMIN_PASSWORD || 'jamr2026').trim());
+  const configuredPassword = getConfiguredAdminPassword();
   if (rawCode === configuredPassword) {
     const token = crypto.randomBytes(32).toString('hex');
     adminTokens.set(token, Date.now() + 12 * 60 * 60 * 1000);
@@ -1074,10 +1079,8 @@ app.post('/api/admin/login', (req, res) => {
     });
   }
 
-  const configuredPassword = process.env.ADMIN_PASSWORD || 'jamr2026';
-
+  const expected = getConfiguredAdminPassword();
   const submitted = normalizeDigits(String(req.body?.password || '').trim());
-  const expected = normalizeDigits(configuredPassword.trim());
 
   if (!submitted || submitted !== expected) {
     const nextAttempts = (failRecord?.attempts || 0) + 1;
@@ -3254,6 +3257,19 @@ app.post('/api/rooms/:code/dub-audio', (req, res) => {
   rooms.set(code, updatedRoom);
   broadcastRoom(code);
   return res.json({ ok: true, take: newTake, room: sanitizeRoomForClient(updatedRoom) });
+});
+
+// Explicit JSON 404 and Error handler for /api so API calls never receive HTML fallback pages
+app.use('/api', (_req, res) => {
+  return res.status(404).json({ ok: false, error: 'مسار الخادم المطلوب غير موجود.' });
+});
+
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith('/api')) {
+    console.error('[JAMR] API error:', err);
+    return res.status(500).json({ ok: false, error: 'حدث خطأ داخلي في الخادم.' });
+  }
+  return next(err);
 });
 
 // Auto-finalize Barrah Salfa live category vote when 10s timer expires

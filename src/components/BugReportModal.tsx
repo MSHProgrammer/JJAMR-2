@@ -32,27 +32,50 @@ export const BugReportModal: React.FC<BugReportModalProps> = ({
     }
     setSubmitting(true);
     setError('');
+    const payload = {
+      type,
+      gameId,
+      gameTitle: games.find((g) => g.id === gameId)?.title || 'المنصة العامة',
+      description: trimmed,
+      reporterName: reporterName.trim() || 'لاعب',
+      contact: contact.trim(),
+    };
     try {
-      const selectedGame = games.find((g) => g.id === gameId);
-      const res = await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          gameId,
-          gameTitle: selectedGame ? selectedGame.title : 'المنصة العامة',
-          description: trimmed,
-          reporterName: reporterName.trim() || 'لاعب',
-          contact: contact.trim(),
-        }),
-      });
-      const rawText = await res.text();
-      let json: { error?: string; ok?: boolean } = {};
-      try {
-        json = rawText ? (JSON.parse(rawText) as { error?: string; ok?: boolean }) : {};
-      } catch {
-        json = {};
+      const sendReq = () =>
+        fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+      let res = await sendReq();
+      if ([502, 503, 504].includes(res.status)) {
+        await new Promise((r) => window.setTimeout(r, 1200));
+        res = await sendReq();
       }
+
+      const rawText = await res.text();
+      let json: { error?: string; ok?: boolean } | null = null;
+      try {
+        json = rawText ? (JSON.parse(rawText) as { error?: string; ok?: boolean }) : null;
+      } catch {
+        json = null;
+      }
+
+      // If backend /api/reports is unavailable on a static host (non-JSON 404/405), persist locally instead of failing
+      if (!json && (res.status === 404 || res.status === 405)) {
+        try {
+          const prev = JSON.parse(window.localStorage.getItem('jamr_local_reports_v1') || '[]');
+          const entry = { id: `rep_local_${Date.now()}`, ...payload, status: 'new', createdAt: new Date().toISOString() };
+          window.localStorage.setItem('jamr_local_reports_v1', JSON.stringify([entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 50)));
+        } catch {
+          // ignore storage errors
+        }
+        SoundFX.playCorrect();
+        setSent(true);
+        return;
+      }
+
       if (!res.ok) {
         throw new Error(json?.error || `تعذّر إرسال البلاغ (${res.status})`);
       }
