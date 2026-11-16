@@ -29,6 +29,7 @@ export const DEFAULT_GAMES: GameConfig[] = [
     supportsOnline: true,
     isActive: true,
     underMaintenance: false,
+    isMostPlayed: true,
     bgGradient: 'from-rose-600/30 via-amber-500/20 to-teal-500/25',
     accentColor: '#E8503A',
     rules: [
@@ -56,6 +57,7 @@ export const DEFAULT_GAMES: GameConfig[] = [
     supportsOnline: true,
     isActive: true,
     underMaintenance: false,
+    isMostPlayed: true,
     bgGradient: 'from-amber-500/30 via-orange-600/20 to-red-600/25',
     accentColor: '#F59E0B',
     rules: [
@@ -137,6 +139,7 @@ export const DEFAULT_GAMES: GameConfig[] = [
     supportsOnline: true,
     isActive: true,
     underMaintenance: false,
+    isMostPlayed: true,
     bgGradient: 'from-cyan-600/30 via-sky-600/20 to-indigo-700/25',
     accentColor: '#06B6D4',
     rules: [
@@ -192,6 +195,7 @@ export const DEFAULT_GAMES: GameConfig[] = [
     supportsOnline: true,
     isActive: true,
     underMaintenance: false,
+    isMostPlayed: true,
     bgGradient: 'from-stone-900/90 via-red-950/75 to-amber-900/60',
     accentColor: '#C89B3C',
     rules: [
@@ -201,6 +205,34 @@ export const DEFAULT_GAMES: GameConfig[] = [
       'اربط الأدلة والشخصيات على لوحة الخيوط الحمراء، ثم قدم اتهامك السري النهائي!',
     ],
     specialMechanic: 'لوحة تحقيق تفاعلية بالخيوط الحمراء، استجواب ديناميكي، خط زمني، وتصويت اتهام سري في الغرف الأونلاين.',
+  },
+  {
+    id: 'dub_mic',
+    title: 'مايك الدوبلاج',
+    subtitle: 'DUB MIC — المشهد إنجليزي... والهبد عربي!',
+    description:
+      'لعبة جماعية أونلاين لمشاهدة مشاهد كرتونية إنجليزية حقيقية وإعادة تأليف الحوار باللغة العربية بصوتكم مع عرض مقارنة «خربنا المشهد» قبل وبعد!',
+    icon: '🎤',
+    category: 'دوبلاج وكوميديا',
+    minPlayers: 2,
+    maxPlayers: 12,
+    duration: '10-25 دقيقة',
+    difficulty: 'حماسية',
+    tags: ['جديد ✨', 'أونلاين فقط', 'الأكثر لعباً 🔥'],
+    supportsOffline: false,
+    supportsOnline: true,
+    isActive: true,
+    underMaintenance: false,
+    isMostPlayed: true,
+    bgGradient: 'from-fuchsia-600/30 via-purple-600/25 to-orange-500/25',
+    accentColor: '#A855F7',
+    rules: [
+      'ادخل غرفة أونلاين واختر أحد الأطوار الـ 4: الدوبلاج المباشر، دوبلاج الهبد، التمثيل الجماعي، أو لاعب ضد لاعب.',
+      'شاهد المشهد الكرتوني الإنجليزي الأصلي وتعرّف على الشخصيات وتوقيت الكلام.',
+      'افتح المايك وسجّل دوبلاجك العربي المرتجل أو من تأليفك المضحك.',
+      'شاهدوا إعادة «خربنا المشهد» قبل وبعد، ثم صوّتوا لـ 5 فئات للفوز بالألقاب والنقاط!',
+    ],
+    specialMechanic: 'أول لعبة دوبلاج كرتوني عربي تفاعلية مع 4 أطوار، مايك مباشر، وعرض مقارنة قبل وبعد!',
   },
   {
     id: 'sound_mimic',

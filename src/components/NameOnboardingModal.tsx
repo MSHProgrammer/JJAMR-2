@@ -16,18 +16,24 @@ interface NameOnboardingModalProps {
   initialAvatar?: string;
   initialAvatarBg?: string;
   onConfirm: (name: string, avatarId: string, avatarBg: string) => void;
+  onOpenAvatarCropper?: () => void;
 }
 
 export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
   initialAvatar = DEFAULT_AVATAR_ID,
   initialAvatarBg = DEFAULT_AVATAR_BG,
   onConfirm,
+  onOpenAvatarCropper,
 }) => {
   const [name, setName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(initialAvatar);
   const [selectedBg, setSelectedBg] = useState(initialAvatarBg);
   const [previewKey, setPreviewKey] = useState(0);
   const [error, setError] = useState('');
+
+  React.useEffect(() => {
+    if (initialAvatar) setSelectedAvatar(initialAvatar);
+  }, [initialAvatar]);
 
   const selectedInfo = resolveCharacterAvatar(selectedAvatar);
 
@@ -87,13 +93,24 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <label className="text-xs font-extrabold text-orange-700">
                 اختر شخصيتك (15 شخصية):
               </label>
-              <span className="text-[11px] font-black text-[#5A3E32] bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                {selectedInfo.tagline}
-              </span>
+              <div className="flex items-center gap-2">
+                {onOpenAvatarCropper && (
+                  <button
+                    type="button"
+                    onClick={onOpenAvatarCropper}
+                    className="text-[11px] font-black bg-orange-500 text-white px-2.5 py-1 rounded-full cursor-pointer"
+                  >
+                    📸 صورة من الاستوديو
+                  </button>
+                )}
+                <span className="text-[11px] font-black text-[#5A3E32] bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                  {selectedInfo.tagline}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-5 gap-2 p-3 rounded-2xl bg-[#FFF8EE] border border-amber-200 max-h-56 overflow-y-auto">

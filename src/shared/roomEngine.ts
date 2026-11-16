@@ -4,6 +4,10 @@ import type {
   BrokenTvReactionType,
   BrokenTvState,
   ChatMessage,
+  DubMicMode,
+  DubMicScene,
+  DubMicState,
+  DubVoteCategory,
   IsmFieldEvaluation,
   IsmFieldKey,
   IsmHayawanState,
@@ -16,6 +20,7 @@ import { DEFAULT_BARRAH_CATEGORIES } from '../data/barrahSalfaCategories.ts';
 import { checkArabicSaudiDictionary } from '../data/arabicSaudiDictionary.ts';
 import { normalizeArabic, wordStartsWithLetter } from '../utils/arabicNormalize.ts';
 import { PUBLIC_DETECTIVE_CASES } from '../data/detectivePublicCases.ts';
+import { DEFAULT_DUB_SCENES, DUB_ACHIEVEMENTS, DUB_FUNNY_TITLES } from '../data/dubMicScenes.ts';
 import type { DetectiveOnlineState } from '../types/detective.ts';
 
 export function generateRoomCode(): string {
@@ -468,6 +473,122 @@ export function createInitialDetectiveState(caseId?: string): DetectiveOnlineSta
     accusationsByPlayer: {},
     revealedSolution: null,
     resultsByPlayer: [],
+  };
+}
+
+export function createInitialDubMicState(
+  players: Player[],
+  scenes: DubMicScene[] = DEFAULT_DUB_SCENES,
+  sceneId?: string,
+  mode: DubMicMode = 'live_dub'
+): DubMicState {
+  const pool = scenes.length > 0 ? scenes : DEFAULT_DUB_SCENES;
+  const scene = pool.find((s) => s.id === sceneId) || pool[0];
+  const activePlayers = players.filter((p) => !p.isJudge);
+  const assignments: Record<string, string> = {};
+  scene.characters.forEach((char, idx) => {
+    const picked = activePlayers[idx % Math.max(1, activePlayers.length)];
+    if (picked) assignments[char.id] = picked.id;
+  });
+
+  return {
+    mode,
+    phase: 'setup',
+    sceneId: scene.id,
+    assignments,
+    readyPlayerIds: [],
+    scriptsByPlayer: {},
+    takes: [],
+    activePerformerId: activePlayers[0]?.id || null,
+    performerQueue: activePlayers.map((p) => p.id),
+    phaseDeadline: null,
+    replaySyncAt: null,
+    replayMode: 'dubbed',
+    votes: {},
+    scoresDelta: {},
+    winnerPlayerId: null,
+    roundAwards: [],
+  };
+}
+
+export function computeDubMicResults(
+  dubMic: DubMicState,
+  players: Player[]
+): DubMicState {
+  const activePlayers = players.filter((p) => !p.isJudge);
+  const scoresDelta: Record<string, number> = {};
+  const categoryWinners: Partial<Record<DubVoteCategory, Record<string, number>>> = {
+    funniest: {},
+    best_voice: {},
+    weirdest_dialogue: {},
+    best_acting: {},
+    best_lipsync: {},
+  };
+
+  for (const p of activePlayers) {
+    const tookPart = dubMic.takes.some((t) => t.playerId === p.id && (t.audioDataUrl || t.scriptText));
+    const wroteScript = Boolean(dubMic.scriptsByPlayer[p.id]?.trim());
+    scoresDelta[p.id] = (tookPart ? 25 : 0) + (wroteScript ? 15 : 0);
+  }
+
+  Object.entries(dubMic.votes || {}).forEach(([voterId, cats]) => {
+    (Object.entries(cats || {}) as Array<[DubVoteCategory, string]>).forEach(([cat, targetId]) => {
+      if (!targetId || targetId === voterId) return;
+      scoresDelta[targetId] = (scoresDelta[targetId] || 0) + 30;
+      if (!categoryWinners[cat]) categoryWinners[cat] = {};
+      categoryWinners[cat]![targetId] = (categoryWinners[cat]![targetId] || 0) + 1;
+    });
+  });
+
+  const sortedPlayers = [...activePlayers].sort(
+    (a, b) => (scoresDelta[b.id] || 0) - (scoresDelta[a.id] || 0)
+  );
+  const winnerPlayerId = sortedPlayers[0]?.id || null;
+
+  const topForCat = (cat: DubVoteCategory): string | null => {
+    const entries = Object.entries(categoryWinners[cat] || {});
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
+  };
+
+  const funniestWinner = topForCat('funniest');
+  const weirdestWinner = topForCat('weirdest_dialogue');
+  const lipsyncWinner = topForCat('best_lipsync');
+  const voiceWinner = topForCat('best_voice');
+
+  const roundAwards = sortedPlayers.map((p, idx) => {
+    let title = DUB_FUNNY_TITLES[(idx + 2) % DUB_FUNNY_TITLES.length];
+    let achievement: string | undefined;
+    if (p.id === winnerPlayerId) {
+      title = dubMic.mode === 'habd_dub' ? 'أسطورة الهبد 🤪' : 'ملك الدوبلاج 👑';
+      achievement = dubMic.mode === 'pvp' ? DUB_ACHIEVEMENTS[5].title : DUB_ACHIEVEMENTS[1].title;
+    } else if (p.id === funniestWinner) {
+      title = 'أفشل ممثل (بس يضحك!) 😂';
+      achievement = DUB_ACHIEVEMENTS[2].title;
+    } else if (p.id === weirdestWinner) {
+      title = 'مترجم من كوكب آخر 🛸';
+    } else if (p.id === lipsyncWinner) {
+      title = 'مكسّر المشاهد 🎬';
+      achievement = DUB_ACHIEVEMENTS[4].title;
+    } else if (p.id === voiceWinner) {
+      title = 'أفضل صوت شرير 😈';
+    }
+    return {
+      playerId: p.id,
+      playerName: p.name,
+      title,
+      achievement,
+      points: scoresDelta[p.id] || 0,
+    };
+  });
+
+  return {
+    ...dubMic,
+    phase: 'results',
+    scoresDelta,
+    winnerPlayerId,
+    roundAwards,
   };
 }
 

@@ -204,8 +204,16 @@ const LEGACY_EMOJI_TO_CHAR: Record<string, string> = {
   '🎮': 'char_10',
 };
 
+export function isCustomAvatarDataUrl(raw?: string | null): boolean {
+  const clean = (raw || '').trim();
+  return clean.startsWith('data:image/') && clean.length > 30 && clean.length < 350_000;
+}
+
 export function sanitizeAvatarId(raw?: string | null): string {
   const clean = (raw || '').trim();
+  if (isCustomAvatarDataUrl(clean)) {
+    return clean;
+  }
   if (CHARACTER_AVATARS.some((c) => c.id === clean)) {
     return clean;
   }
@@ -217,6 +225,15 @@ export function sanitizeAvatarId(raw?: string | null): string {
 
 export function resolveCharacterAvatar(raw?: string | null): CharacterAvatarInfo {
   const id = sanitizeAvatarId(raw);
+  if (isCustomAvatarDataUrl(id)) {
+    return {
+      id,
+      name: 'صورة مخصصة',
+      tagline: 'من الاستوديو 📸',
+      imageUrl: id,
+      accentColor: '#F97316',
+    };
+  }
   return CHARACTER_AVATARS.find((c) => c.id === id) || CHARACTER_AVATARS[0];
 }
 

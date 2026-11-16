@@ -11,8 +11,10 @@ import {
   Globe,
   MessageSquare,
   Wrench,
+  UserPlus,
+  Camera,
 } from 'lucide-react';
-import { BarrahCategory, GameConfig, RoomState } from '../types/jamr';
+import { AppNotification, BarrahCategory, DubMicScene, GameConfig, RoomState } from '../types/jamr';
 import { getOrCreateSessionPlayerId, JamrSocketClient, SocketStatus } from '../network/socketClient';
 import { SoundFX } from '../utils/soundFx';
 import { BrokenTvEngine } from './games/BrokenTvEngine';
@@ -20,6 +22,8 @@ import { IsmHayawanEngine } from './games/IsmHayawanEngine';
 import { BarrahSalfaEngine } from './games/BarrahSalfaEngine';
 import { MafiaNoHakamEngine } from './games/MafiaNoHakamEngine';
 import { SmartDetectiveEngine } from './games/SmartDetectiveEngine';
+import { DubMicEngine } from './games/DubMicEngine';
+import { VoiceChatBar } from './voice/VoiceChatBar';
 import {
   AVATAR_BG_PRESETS,
   CHARACTER_AVATARS,
@@ -39,10 +43,16 @@ interface OnlineGameViewProps {
   playerName: string;
   playerAvatar?: string;
   playerAvatarBg?: string;
+  username?: string;
   onUpdatePlayerAvatar?: (avatarId: string) => void;
   onUpdatePlayerAvatarBg?: (bg: string) => void;
+  onOpenAvatarCropper?: () => void;
+  onOpenFriendsInvite?: () => void;
+  onRoomCodeChange?: (code: string | null) => void;
+  onNotification?: (notif: AppNotification) => void;
   games: GameConfig[];
   barrahCategories: BarrahCategory[];
+  dubScenes?: DubMicScene[];
   onMatchStateChange?: (active: boolean) => void;
   onExit: () => void;
 }
@@ -56,10 +66,16 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   playerName,
   playerAvatar,
   playerAvatarBg,
+  username,
   onUpdatePlayerAvatar,
   onUpdatePlayerAvatarBg,
+  onOpenAvatarCropper,
+  onOpenFriendsInvite,
+  onRoomCodeChange,
+  onNotification,
   games,
   barrahCategories,
+  dubScenes,
   onMatchStateChange,
   onExit,
 }) => {
@@ -123,6 +139,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
         setErrorMsg('');
         setIsBusy(false);
         onMatchStateChange?.(r.status === 'playing');
+        onRoomCodeChange?.(r.code);
       },
       onStatusChange: (status, p2pFlag) => {
         setSocketStatus(status);
@@ -137,17 +154,29 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
         setIsBusy(false);
         setErrorMsg('قام المضيف بإخراجك من الغرفة.');
         onMatchStateChange?.(false);
+        onRoomCodeChange?.(null);
+      },
+      onNotification: (notif) => {
+        onNotification?.(notif);
       },
     });
     client.setCategories(barrahCategories);
+    if (username) client.bindUser(username);
     clientRef.current = client;
     void client.connect();
 
     return () => {
       onMatchStateChange?.(false);
+      onRoomCodeChange?.(null);
       client.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    if (username) {
+      clientRef.current?.bindUser(username);
+    }
+  }, [username]);
 
   useEffect(() => {
     clientRef.current?.setCategories(barrahCategories);
@@ -378,6 +407,25 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             />
           </div>
         )}
+        {room.gameId === 'dub_mic' && (
+          <DubMicEngine
+            room={room}
+            localPlayerId={localPlayerId}
+            dubScenes={dubScenes}
+            onSendAction={sendAction}
+            onExit={exitMatch}
+          />
+        )}
+
+        {/* Live WebRTC Voice Chat Dock during gameplay */}
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 pb-6">
+          <VoiceChatBar
+            players={room.players}
+            localPlayerId={localPlayerId}
+            socketClient={clientRef.current}
+            compact
+          />
+        </div>
 
         {/* Floating Live Chat Drawer */}
         <button
@@ -487,11 +535,22 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span>{copiedLink ? 'تم نسخ رابط الدعوة!' : 'نسخ رابط الدعوة'}</span>
             </button>
+            {onOpenFriendsInvite && (
+              <button
+                type="button"
+                onClick={onOpenFriendsInvite}
+                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>دعوة صديق</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 SoundFX.playClick();
                 clientRef.current?.leaveRoom();
                 setRoom(null);
+                onRoomCodeChange?.(null);
               }}
               className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-black text-xs flex items-center gap-1.5 cursor-pointer"
             >
@@ -500,6 +559,13 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Live Browser-to-Browser WebRTC Voice Chat */}
+        <VoiceChatBar
+          players={room.players}
+          localPlayerId={localPlayerId}
+          socketClient={clientRef.current}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Players + Host Game Switcher */}
@@ -743,7 +809,21 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-[#5A3E32] mb-1.5">اختر شخصيتك الكرتونية ({CHARACTER_AVATARS.length})</label>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+              <label className="text-xs font-bold text-[#5A3E32]">
+                اختر شخصيتك الكرتونية ({CHARACTER_AVATARS.length})
+              </label>
+              {onOpenAvatarCropper && (
+                <button
+                  type="button"
+                  onClick={onOpenAvatarCropper}
+                  className="text-[11px] font-black bg-orange-500 text-white px-2.5 py-1 rounded-full inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>من الاستوديو</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-5 gap-2 max-h-48 overflow-y-auto p-1">
               {CHARACTER_AVATARS.map((char) => {
                 const active = avatar === char.id;

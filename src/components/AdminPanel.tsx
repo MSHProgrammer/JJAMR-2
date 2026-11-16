@@ -15,17 +15,23 @@ import {
   RefreshCw,
   Check,
   X,
+  Flame,
+  KeyRound,
+  Film,
 } from 'lucide-react';
 import {
   BarrahCategory,
   BugReport,
+  CheatCodeConfig,
   DataStoreSnapshot,
+  DubMicScene,
   GameConfig,
   MimicSound,
   Question,
   Section,
   Topic,
 } from '../types/jamr';
+import { CHEAT_EFFECTS_CATALOG } from '../data/cheatCodesCatalog';
 import { extractAudioFromFile, processStudioImageFile } from '../utils/mediaTools';
 import { SoundFX } from '../utils/soundFx';
 
@@ -36,6 +42,8 @@ interface AdminPanelProps {
 
 type AdminTab =
   | 'games'
+  | 'cheats'
+  | 'dub_scenes'
   | 'topics'
   | 'sections'
   | 'questions'
@@ -125,6 +133,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
 
   // Import mode
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+
+  // Cheat codes form (100 effects)
+  const [cheatCodeInput, setCheatCodeInput] = useState('');
+  const [cheatEffectId, setCheatEffectId] = useState<number>(1);
+  const [cheatEffectSearch, setCheatEffectSearch] = useState('');
+  const [cheatDescInput, setCheatDescInput] = useState('');
+
+  // Dub scenes form
+  const [dubTitle, setDubTitle] = useState('');
+  const [dubWorkTitle, setDubWorkTitle] = useState('');
+  const [dubCat, setDubCat] = useState('كوميديا كرتون');
+  const [dubVideoUrl, setDubVideoUrl] = useState('');
+  const [dubStartSec, setDubStartSec] = useState(5);
+  const [dubEndSec, setDubEndSec] = useState(25);
+  const [dubDesc, setDubDesc] = useState('');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -336,6 +359,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
         {[
           { id: 'games', label: 'الألعاب والشعارات' },
+          { id: 'cheats', label: `أكواد الغش (100 نوع) 🔐` },
+          { id: 'dub_scenes', label: 'مشاهد مايك الدوبلاج 🎬' },
           { id: 'topics', label: 'مواضيع جَمْرَيْن' },
           { id: 'sections', label: 'الأقسام' },
           { id: 'questions', label: 'بنك الأسئلة' },
@@ -396,6 +421,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={async () => {
+                      const res = await authFetch(`/api/admin/games/${g.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ isMostPlayed: !g.isMostPlayed }),
+                      });
+                      setStore((s) => (s ? { ...s, games: s.games.map((x) => (x.id === g.id ? res.game : x)) } : s));
+                      onDataUpdated();
+                      showToast(res.game.isMostPlayed ? 'تم تثبيت اللعبة في الأكثر لعباً 🔥' : 'تمت الإزالة من الأكثر لعباً');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer ${
+                      g.isMostPlayed
+                        ? 'bg-gradient-to-l from-orange-500 to-rose-500 text-white shadow-xs'
+                        : 'bg-[#FFF8EE] border border-amber-200 text-[#5A3E32]'
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5" />
+                    <span>{g.isMostPlayed ? 'الأكثر لعباً 🔥' : 'تعيين الأكثر لعباً'}</span>
+                  </button>
                   <button
                     onClick={() => setLogoModalGame(g)}
                     className="px-3 py-1.5 rounded-lg bg-orange-100 text-orange-800 border border-orange-200 text-xs font-black flex items-center gap-1 cursor-pointer"
@@ -475,6 +519,290 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onDataUpdated, onExit })
               <Plus className="w-4 h-4" />
               <span>إضافة اللعبة</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: CHEAT CODES (100 TYPES) */}
+      {tab === 'cheats' && store && (
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-white border border-amber-200 shadow-xs p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-orange-500" />
+              <h2 className="text-base font-black text-[#23140E]">
+                إنشاء كود غش سري (اختر من 100 نوع وظيفة + حدد الأحرف والأرقام)
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#5A3E32] mb-1">الكود السري (أحرف/أرقام):</label>
+                <input
+                  type="text"
+                  value={cheatCodeInput}
+                  onChange={(e) => setCheatCodeInput(e.target.value)}
+                  placeholder="مثال: VIP777 أو JAMR_WIN"
+                  className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-sm font-mono font-bold text-[#23140E]"
+                />
+              </div>
+
+              <div className="md:col-span-2 space-y-1.5">
+                <label className="block text-xs font-bold text-[#5A3E32]">
+                  اختر وظيفة الكود (1–100 نوع):
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={cheatEffectSearch}
+                    onChange={(e) => setCheatEffectSearch(e.target.value)}
+                    placeholder="ابحث داخل الـ 100 وظيفة..."
+                    className="w-44 rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+                  />
+                  <select
+                    value={cheatEffectId}
+                    onChange={(e) => setCheatEffectId(Number(e.target.value))}
+                    className="flex-1 rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs font-bold text-[#23140E]"
+                  >
+                    {CHEAT_EFFECTS_CATALOG.filter(
+                      (ef) =>
+                        !cheatEffectSearch.trim() ||
+                        ef.title.includes(cheatEffectSearch.trim()) ||
+                        ef.category.includes(cheatEffectSearch.trim()) ||
+                        String(ef.id) === cheatEffectSearch.trim()
+                    ).map((ef) => (
+                      <option key={ef.id} value={ef.id}>
+                        #{ef.id} — {ef.badge} {ef.title} ({ef.category})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <input
+              type="text"
+              value={cheatDescInput}
+              onChange={(e) => setCheatDescInput(e.target.value)}
+              placeholder="ملاحظة أو وصف إضافي اختياري..."
+              className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+            />
+
+            <button
+              onClick={async () => {
+                if (!cheatCodeInput.trim()) return;
+                const res = await authFetch('/api/admin/cheats', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    code: cheatCodeInput.trim(),
+                    effectId: cheatEffectId,
+                    description: cheatDescInput.trim(),
+                  }),
+                });
+                setStore((s) =>
+                  s ? { ...s, cheatCodes: [res.cheat, ...(s.cheatCodes || [])] } : s
+                );
+                setCheatCodeInput('');
+                setCheatDescInput('');
+                showToast('تم إنشاء كود الغش السري بنجاح 🔐');
+              }}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>حفظ وتفعيل الكود السري</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(store.cheatCodes || []).map((ch: CheatCodeConfig) => (
+              <div
+                key={ch.id}
+                className="rounded-2xl bg-white border border-amber-200 p-4 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-sm text-orange-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-lg">
+                      {ch.code}
+                    </span>
+                    <span className="text-[11px] font-bold text-[#7C5D4F]">
+                      النوع #{ch.effectId} · استُخدم {ch.usageCount || 0} مرة
+                    </span>
+                  </div>
+                  <div className="text-xs font-black text-[#23140E] truncate">{ch.effectTitle}</div>
+                  {ch.description && <div className="text-[11px] text-[#6B4E40] truncate">{ch.description}</div>}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={async () => {
+                      const res = await authFetch(`/api/admin/cheats/${ch.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ enabled: !ch.enabled }),
+                      });
+                      setStore((s) =>
+                        s
+                          ? {
+                              ...s,
+                              cheatCodes: (s.cheatCodes || []).map((x) =>
+                                x.id === ch.id ? res.cheat : x
+                              ),
+                            }
+                          : s
+                      );
+                      showToast(res.cheat.enabled ? 'تم تفعيل الكود' : 'تم تعطيل الكود');
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
+                      ch.enabled
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {ch.enabled ? 'مفعّل' : 'معطّل'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await authFetch(`/api/admin/cheats/${ch.id}`, { method: 'DELETE' });
+                      setStore((s) =>
+                        s
+                          ? { ...s, cheatCodes: (s.cheatCodes || []).filter((x) => x.id !== ch.id) }
+                          : s
+                      );
+                      showToast('تم حذف الكود');
+                    }}
+                    className="p-1.5 rounded-lg bg-rose-100 text-rose-700 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: DUB MIC SCENES MANAGEMENT */}
+      {tab === 'dub_scenes' && store && (
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-white border border-amber-200 shadow-xs p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Film className="w-5 h-5 text-orange-500" />
+              <h2 className="text-base font-black text-[#23140E]">
+                إضافة مشهد إنجليزي جديد للعبة مايك الدوبلاج
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input
+                type="text"
+                value={dubTitle}
+                onChange={(e) => setDubTitle(e.target.value)}
+                placeholder="عنوان المشهد بالعربي..."
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+              />
+              <input
+                type="text"
+                value={dubWorkTitle}
+                onChange={(e) => setDubWorkTitle(e.target.value)}
+                placeholder="اسم العمل الإنجليزي (مثال: Classic Cartoon)..."
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+              />
+              <input
+                type="text"
+                value={dubCat}
+                onChange={(e) => setDubCat(e.target.value)}
+                placeholder="التصنيف (كوميديا / أكشن / مغامرات)..."
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+              />
+              <input
+                type="url"
+                value={dubVideoUrl}
+                onChange={(e) => setDubVideoUrl(e.target.value)}
+                placeholder="رابط الفيديو MP4 المباشر..."
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E] sm:col-span-2"
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={dubStartSec}
+                  onChange={(e) => setDubStartSec(Number(e.target.value))}
+                  placeholder="البداية (ث)"
+                  className="w-1/2 rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+                />
+                <input
+                  type="number"
+                  value={dubEndSec}
+                  onChange={(e) => setDubEndSec(Number(e.target.value))}
+                  placeholder="النهاية (ث)"
+                  className="w-1/2 rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E]"
+                />
+              </div>
+              <input
+                type="text"
+                value={dubDesc}
+                onChange={(e) => setDubDesc(e.target.value)}
+                placeholder="وصف المشهد..."
+                className="rounded-xl bg-[#FFF8EE] border border-amber-200 px-3 py-2 text-xs text-[#23140E] sm:col-span-3"
+              />
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!dubTitle.trim() || !dubVideoUrl.trim()) return;
+                const res = await authFetch('/api/admin/dub-scenes', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    title: dubTitle.trim(),
+                    workTitle: dubWorkTitle.trim() || 'Cartoon Scene',
+                    category: dubCat.trim() || 'كوميديا كرتون',
+                    videoUrl: dubVideoUrl.trim(),
+                    clipStartSec: dubStartSec,
+                    clipEndSec: dubEndSec,
+                    description: dubDesc.trim(),
+                  }),
+                });
+                setStore((s) =>
+                  s ? { ...s, dubScenes: [res.scene, ...(s.dubScenes || [])] } : s
+                );
+                setDubTitle('');
+                setDubVideoUrl('');
+                setDubDesc('');
+                onDataUpdated();
+                showToast('تمت إضافة المشهد لمايك الدوبلاج 🎬');
+              }}
+              className="px-5 py-2.5 rounded-xl bg-orange-500 text-white font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>حفظ المشهد</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(store.dubScenes || []).map((sc: DubMicScene) => (
+              <div
+                key={sc.id}
+                className="rounded-2xl bg-white border border-amber-200 p-4 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-sm font-black text-[#23140E] truncate">{sc.title}</div>
+                  <div className="text-[11px] font-bold text-orange-700">
+                    {sc.workTitle} · {sc.category} ({sc.clipStartSec}s–{sc.clipEndSec}s)
+                  </div>
+                  <div className="text-[10px] text-[#7C5D4F] truncate">{sc.videoUrl}</div>
+                </div>
+                <button
+                  onClick={async () => {
+                    await authFetch(`/api/admin/dub-scenes/${sc.id}`, { method: 'DELETE' });
+                    setStore((s) =>
+                      s ? { ...s, dubScenes: (s.dubScenes || []).filter((x) => x.id !== sc.id) } : s
+                    );
+                    onDataUpdated();
+                    showToast('تم حذف المشهد');
+                  }}
+                  className="p-1.5 rounded-lg bg-rose-100 text-rose-700 shrink-0 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}

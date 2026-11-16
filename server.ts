@@ -8,10 +8,17 @@ import crypto from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { GoogleGenAI, Type } from '@google/genai';
 import type {
+  AppNotification,
   BarrahCategory,
   BrokenTvReactionType,
   BugReport,
+  CheatCodeConfig,
   DataStoreSnapshot,
+  DubMicMode,
+  DubMicScene,
+  DubSceneCharacter,
+  DubTakeRecord,
+  DubVoteCategory,
   GameConfig,
   IsmFieldEvaluation,
   IsmFieldKey,
@@ -22,6 +29,7 @@ import type {
   RoomState,
   Section,
   Topic,
+  UserRecord,
 } from './src/types/jamr.ts';
 import { DEFAULT_GAMES, DEFAULT_SECTIONS } from './src/data/defaultGames.ts';
 import {
@@ -30,6 +38,8 @@ import {
   isLegacyFillerQuestion,
 } from './src/data/jamrain100Topics.ts';
 import { DEFAULT_BARRAH_CATEGORIES } from './src/data/barrahSalfaCategories.ts';
+import { DEFAULT_DUB_SCENES } from './src/data/dubMicScenes.ts';
+import { CHEAT_EFFECTS_CATALOG } from './src/data/cheatCodesCatalog.ts';
 import { checkArabicSaudiDictionary } from './src/data/arabicSaudiDictionary.ts';
 import { normalizeArabic, normalizeDigits, sanitizeText, wordStartsWithLetter } from './src/utils/arabicNormalize.ts';
 import {
@@ -38,9 +48,11 @@ import {
   applyBrokenTvReaction,
   applyBrokenTvStepSubmission,
   areAllIsmFieldsFilled,
+  computeDubMicResults,
   computeIsmScores,
   createInitialBrokenTvState,
   createInitialDetectiveState,
+  createInitialDubMicState,
   createInitialIsmState,
   finalizeBarrahCategoryVote,
   generateRoomCode,
@@ -120,6 +132,9 @@ function loadAndReconcileStore(): DataStoreSnapshot {
     barrahCategories: reconcileById(DEFAULT_BARRAH_CATEGORIES, parsed.barrahCategories),
     reports: Array.isArray(parsed.reports) ? parsed.reports : [],
     mimicSounds: Array.isArray(parsed.mimicSounds) ? parsed.mimicSounds : [],
+    cheatCodes: Array.isArray(parsed.cheatCodes) ? parsed.cheatCodes : [],
+    dubScenes: reconcileById(DEFAULT_DUB_SCENES, parsed.dubScenes),
+    users: parsed.users && typeof parsed.users === 'object' ? parsed.users : {},
   };
 
   persistStore(store);
@@ -208,7 +223,12 @@ app.get('/api/catalog', (_req, res) => {
     topics: dataStore.topics,
     questionsCount: dataStore.questions.length,
     barrahCategories: dataStore.barrahCategories,
+    dubScenes: dataStore.dubScenes || DEFAULT_DUB_SCENES,
   });
+});
+
+app.get('/api/dub/scenes', (_req, res) => {
+  res.json({ scenes: dataStore.dubScenes || DEFAULT_DUB_SCENES });
 });
 
 app.get('/api/games', (_req, res) => {
@@ -696,6 +716,350 @@ app.post('/api/detective/verify', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Secret Codes / Cheat Codes Redemption & Username / Friends / Notifications
+// ---------------------------------------------------------------------------
+function normalizeUsername(raw: unknown): string {
+  return String(raw || '')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function sanitizeAvatarPayload(raw: unknown, fallback = 'char_01'): string {
+  const val = typeof raw === 'string' ? raw.trim() : '';
+  if (val.startsWith('data:image/') && val.length > 30 && val.length < 360_000) {
+    return val;
+  }
+  return sanitizeText(val, 24) || fallback;
+}
+
+function pushUserNotification(username: string, notification: AppNotification) {
+  const users = (dataStore.users = dataStore.users || {});
+  const target = users[username];
+  if (!target) return;
+  target.notifications = [notification, ...(target.notifications || [])].slice(0, 40);
+  // Real-time push to connected WebSocket clients matching this username or playerId
+  clients.forEach((meta) => {
+    if (
+      meta.ws.readyState === WebSocket.OPEN &&
+      (meta.username === username || meta.playerId === target.playerId)
+    ) {
+      sendWs(meta.ws, {
+        type: 'notification',
+        targetUsername: username,
+        notification,
+      });
+    }
+  });
+}
+
+app.post('/api/cheats/redeem', (req, res) => {
+  const rawCode = normalizeDigits(String(req.body?.code || '').trim());
+  if (!rawCode) {
+    return res.status(400).json({ ok: false, error: 'أدخل الكود السري أولاً.' });
+  }
+
+  const configuredPassword = normalizeDigits((process.env.ADMIN_PASSWORD || 'jamr2026').trim());
+  if (rawCode === configuredPassword) {
+    const token = crypto.randomBytes(32).toString('hex');
+    adminTokens.set(token, Date.now() + 12 * 60 * 60 * 1000);
+    return res.json({
+      ok: true,
+      kind: 'admin',
+      token,
+      message: 'تم فتح لوحة إدارة جَمْر السرية بنجاح!',
+    });
+  }
+
+  const cheats = dataStore.cheatCodes || [];
+  const match = cheats.find(
+    (c) => c.enabled && normalizeDigits(c.code.trim()).toUpperCase() === rawCode.toUpperCase()
+  );
+
+  if (!match) {
+    return res.status(404).json({ ok: false, error: 'الكود السري غير صحيح أو معطّل.' });
+  }
+
+  match.usageCount = (match.usageCount || 0) + 1;
+  persistStore(dataStore);
+
+  const effect = CHEAT_EFFECTS_CATALOG.find((e) => e.id === match.effectId) || {
+    id: match.effectId,
+    title: match.effectTitle,
+    category: 'ميزة سرية',
+    description: match.description || 'تم تفعيل الكود السري!',
+    badge: '✨',
+  };
+
+  return res.json({
+    ok: true,
+    kind: 'cheat',
+    cheat: match,
+    effect,
+    message: `تم تفعيل كود «${match.code}»: ${effect.title}!`,
+  });
+});
+
+app.post('/api/users/register', (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  const playerId = sanitizeText(String(req.body?.playerId || ''), 80);
+  const displayName = sanitizeText(String(req.body?.displayName || 'لاعب جَمْر'), 30) || 'لاعب جَمْر';
+  const avatar = sanitizeAvatarPayload(req.body?.avatar, 'char_01');
+  const avatarBg = sanitizeText(String(req.body?.avatarBg || ''), 32) || undefined;
+
+  if (username.length < 3 || username.length > 20) {
+    return res.status(400).json({
+      ok: false,
+      error: 'يجب أن يكون اليوزر نيم بين 3 و 20 خانة (أحرف إنجليزية وأرقام و _ فقط).',
+    });
+  }
+
+  const users = (dataStore.users = dataStore.users || {});
+  const existing = users[username];
+  if (existing && existing.playerId !== playerId) {
+    return res.status(409).json({
+      ok: false,
+      error: `اليوزر نيم @${username} محجوز ومستخدم لشخص آخر! اختر يوزر نيم غير مكرر.`,
+    });
+  }
+
+  // If this playerId previously had a different username, migrate friends/notifications or block rename conflict
+  const record: UserRecord = existing
+    ? {
+        ...existing,
+        displayName,
+        avatar,
+        avatarBg,
+        lastSeen: Date.now(),
+      }
+    : {
+        username,
+        playerId: playerId || `u_${Date.now().toString(36)}`,
+        displayName,
+        avatar,
+        avatarBg,
+        friends: [],
+        incomingRequests: [],
+        outgoingRequests: [],
+        notifications: [],
+        dubXp: 0,
+        dubTitles: [],
+        dubAchievements: [],
+        lastSeen: Date.now(),
+      };
+
+  users[username] = record;
+  persistStore(dataStore);
+  return res.json({ ok: true, user: record });
+});
+
+app.post('/api/users/sync-presence', (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  if (!username) return res.json({ ok: true });
+  const users = (dataStore.users = dataStore.users || {});
+  const u = users[username];
+  if (!u) return res.json({ ok: false });
+
+  u.lastSeen = Date.now();
+  if (req.body?.displayName) u.displayName = sanitizeText(String(req.body.displayName), 30) || u.displayName;
+  if (req.body?.avatar) u.avatar = sanitizeAvatarPayload(req.body.avatar, u.avatar);
+  if (req.body?.avatarBg) u.avatarBg = sanitizeText(String(req.body.avatarBg), 32);
+  if (req.body?.playerId) u.playerId = sanitizeText(String(req.body.playerId), 80);
+  if (req.body?.roomCode !== undefined) {
+    const rc = String(req.body.roomCode || '').trim().toUpperCase();
+    u.currentRoomCode = rc && rooms.has(rc) ? rc : null;
+    u.currentGameId = rc && rooms.has(rc) ? rooms.get(rc)!.gameId : null;
+  }
+  return res.json({ ok: true });
+});
+
+app.get('/api/friends/state', (req, res) => {
+  const username = normalizeUsername(req.query.username);
+  if (!username) {
+    return res.json({ ok: true, registered: false, friends: [], incomingRequests: [], outgoingRequests: [], notifications: [] });
+  }
+  const users = (dataStore.users = dataStore.users || {});
+  const me = users[username];
+  if (!me) {
+    return res.json({ ok: true, registered: false, friends: [], incomingRequests: [], outgoingRequests: [], notifications: [] });
+  }
+
+  me.lastSeen = Date.now();
+  const now = Date.now();
+
+  const enrich = (handle: string) => {
+    const rec = users[handle];
+    const activeRoom = rec?.currentRoomCode ? rooms.get(rec.currentRoomCode) : undefined;
+    const gameTitle = activeRoom
+      ? dataStore.games.find((g) => g.id === activeRoom.gameId)?.title || activeRoom.gameId
+      : undefined;
+    return {
+      username: handle,
+      displayName: rec?.displayName || handle,
+      avatar: rec?.avatar || 'char_01',
+      avatarBg: rec?.avatarBg,
+      isOnline: Boolean(rec && now - rec.lastSeen < 120_000),
+      roomCode: activeRoom ? activeRoom.code : null,
+      gameId: activeRoom ? activeRoom.gameId : null,
+      gameTitle,
+    };
+  };
+
+  return res.json({
+    ok: true,
+    registered: true,
+    user: {
+      username: me.username,
+      displayName: me.displayName,
+      avatar: me.avatar,
+      avatarBg: me.avatarBg,
+      dubXp: me.dubXp || 0,
+      dubTitles: me.dubTitles || [],
+      dubAchievements: me.dubAchievements || [],
+    },
+    friends: (me.friends || []).map(enrich),
+    incomingRequests: (me.incomingRequests || []).map(enrich),
+    outgoingRequests: (me.outgoingRequests || []).map(enrich),
+    notifications: me.notifications || [],
+  });
+});
+
+app.post('/api/friends/request', (req, res) => {
+  const fromUsername = normalizeUsername(req.body?.fromUsername);
+  const targetUsername = normalizeUsername(req.body?.targetUsername);
+  const users = (dataStore.users = dataStore.users || {});
+
+  if (!fromUsername || !users[fromUsername]) {
+    return res.status(400).json({ ok: false, error: 'يجب إنشاء يوزر نيم خاص بك أولاً قبل إضافة الأصدقاء!' });
+  }
+  if (!targetUsername || !users[targetUsername]) {
+    return res.status(404).json({ ok: false, error: 'لم يتم العثور على لاعب بهذا اليوزر نيم. الإضافة تتم باليوزر نيم الفريد فقط.' });
+  }
+  if (fromUsername === targetUsername) {
+    return res.status(400).json({ ok: false, error: 'لا يمكنك إضافة نفسك كصديق!' });
+  }
+
+  const me = users[fromUsername];
+  const target = users[targetUsername];
+
+  if (me.friends.includes(targetUsername)) {
+    return res.status(400).json({ ok: false, error: `@${targetUsername} موجود بالفعل في قائمة أصدقائك.` });
+  }
+
+  if (!target.incomingRequests.includes(fromUsername)) {
+    target.incomingRequests.unshift(fromUsername);
+  }
+  if (!me.outgoingRequests.includes(targetUsername)) {
+    me.outgoingRequests.unshift(targetUsername);
+  }
+
+  pushUserNotification(targetUsername, {
+    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: 'friend_request',
+    title: 'طلب صداقة جديد 🤝',
+    body: `أرسل لك ${me.displayName} (@${me.username}) طلب صداقة في منصة جَمْر`,
+    fromUsername: me.username,
+    fromDisplayName: me.displayName,
+    fromAvatar: me.avatar,
+    fromAvatarBg: me.avatarBg,
+    read: false,
+    createdAt: Date.now(),
+  });
+
+  persistStore(dataStore);
+  return res.json({ ok: true, message: `تم إرسال طلب الصداقة إلى @${targetUsername}` });
+});
+
+app.post('/api/friends/respond', (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  const fromUsername = normalizeUsername(req.body?.fromUsername);
+  const accept = Boolean(req.body?.accept);
+  const users = (dataStore.users = dataStore.users || {});
+
+  if (!username || !users[username]) {
+    return res.status(400).json({ ok: false, error: 'يجب إنشاء يوزر نيم خاص بك أولاً لقبول طلبات الصداقة!' });
+  }
+  const me = users[username];
+  const sender = users[fromUsername];
+
+  me.incomingRequests = me.incomingRequests.filter((u) => u !== fromUsername);
+  if (sender) {
+    sender.outgoingRequests = sender.outgoingRequests.filter((u) => u !== username);
+  }
+
+  if (accept && sender) {
+    if (!me.friends.includes(fromUsername)) me.friends.unshift(fromUsername);
+    if (!sender.friends.includes(username)) sender.friends.unshift(username);
+    pushUserNotification(fromUsername, {
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'friend_request',
+      title: 'تم قبول طلب الصداقة 🎉',
+      body: `قبل ${me.displayName} (@${me.username}) طلب صداقتك! يمكنكم الآن اللعب ودعوة بعضكم مباشرة.`,
+      fromUsername: me.username,
+      fromDisplayName: me.displayName,
+      fromAvatar: me.avatar,
+      fromAvatarBg: me.avatarBg,
+      read: false,
+      createdAt: Date.now(),
+    });
+  }
+
+  persistStore(dataStore);
+  return res.json({ ok: true });
+});
+
+app.post('/api/friends/invite-room', (req, res) => {
+  const fromUsername = normalizeUsername(req.body?.fromUsername);
+  const targetUsername = normalizeUsername(req.body?.targetUsername);
+  const roomCode = String(req.body?.roomCode || '').trim().toUpperCase();
+  const users = (dataStore.users = dataStore.users || {});
+  const me = users[fromUsername];
+  const target = users[targetUsername];
+  const room = rooms.get(roomCode);
+
+  if (!me || !target) {
+    return res.status(404).json({ ok: false, error: 'تعذر العثور على اللاعب المستهدف.' });
+  }
+  if (!room) {
+    return res.status(404).json({ ok: false, error: 'الغرفة غير نشطة حالياً.' });
+  }
+  const gameTitle = dataStore.games.find((g) => g.id === room.gameId)?.title || 'غرفة جَمْر';
+
+  pushUserNotification(targetUsername, {
+    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: 'room_invite',
+    title: `دعوة للعب ${gameTitle} 🔥`,
+    body: `يدعوك ${me.displayName} (@${me.username}) للانضمام إلى غرفته (${room.code}) الآن!`,
+    fromUsername: me.username,
+    fromDisplayName: me.displayName,
+    fromAvatar: me.avatar,
+    fromAvatarBg: me.avatarBg,
+    roomCode: room.code,
+    gameId: room.gameId,
+    gameTitle,
+    read: false,
+    createdAt: Date.now(),
+  });
+
+  persistStore(dataStore);
+  return res.json({ ok: true, message: `تم إرسال دعوة الغرفة إلى @${targetUsername}` });
+});
+
+app.post('/api/notifications/read', (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  const notificationId = req.body?.notificationId ? String(req.body.notificationId) : null;
+  const users = (dataStore.users = dataStore.users || {});
+  const me = users[username];
+  if (!me) return res.json({ ok: true });
+  me.notifications = (me.notifications || []).map((n) =>
+    !notificationId || n.id === notificationId ? { ...n, read: true } : n
+  );
+  persistStore(dataStore);
+  return res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 // Admin Authentication & Protected Endpoints
 // ---------------------------------------------------------------------------
 app.post('/api/admin/login', (req, res) => {
@@ -814,6 +1178,7 @@ app.put('/api/admin/games/:id', requireAdmin, (req, res) => {
     subtitle: body.subtitle !== undefined ? sanitizeText(String(body.subtitle), 180) : prev.subtitle,
     description: body.description !== undefined ? sanitizeText(String(body.description), 600) : prev.description,
     maintenanceNote: body.maintenanceNote !== undefined ? sanitizeText(String(body.maintenanceNote), 300) : prev.maintenanceNote,
+    isMostPlayed: body.isMostPlayed !== undefined ? Boolean(body.isMostPlayed) : prev.isMostPlayed,
   };
   dataStore.games[idx] = updated;
   persistStore(dataStore);
@@ -1063,6 +1428,135 @@ app.delete('/api/admin/mimic/sounds/:id', requireAdmin, (req, res) => {
   return res.json({ ok: true });
 });
 
+// Cheat Codes Admin CRUD (100 Effect Types)
+app.get('/api/admin/cheats', requireAdmin, (_req, res) => {
+  res.json({ cheatCodes: dataStore.cheatCodes || [] });
+});
+
+app.post('/api/admin/cheats', requireAdmin, (req, res) => {
+  const code = sanitizeText(String(req.body?.code || '').trim().toUpperCase(), 32);
+  const effectId = Math.max(1, Math.min(100, Number(req.body?.effectId) || 1));
+  if (!code || code.length < 2) {
+    return res.status(400).json({ error: 'أدخل رمز الكود (أحرف أو أرقام - خانتان على الأقل).' });
+  }
+  const effectDef = CHEAT_EFFECTS_CATALOG.find((e) => e.id === effectId) || CHEAT_EFFECTS_CATALOG[0];
+  const cheat: CheatCodeConfig = {
+    id: `cht_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+    code,
+    effectId,
+    effectTitle: effectDef.title,
+    description: sanitizeText(String(req.body?.description || effectDef.description), 200),
+    enabled: req.body?.enabled !== false,
+    usageCount: 0,
+    createdAt: new Date().toISOString(),
+  };
+  dataStore.cheatCodes = [cheat, ...(dataStore.cheatCodes || [])];
+  persistStore(dataStore);
+  return res.status(201).json({ cheat });
+});
+
+app.put('/api/admin/cheats/:id', requireAdmin, (req, res) => {
+  const cheats = dataStore.cheatCodes || [];
+  const idx = cheats.findIndex((c) => c.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'الكود غير موجود.' });
+  const prev = cheats[idx];
+  const effectId = req.body?.effectId ? Math.max(1, Math.min(100, Number(req.body.effectId))) : prev.effectId;
+  const effectDef = CHEAT_EFFECTS_CATALOG.find((e) => e.id === effectId);
+  cheats[idx] = {
+    ...prev,
+    code: req.body?.code ? sanitizeText(String(req.body.code).trim().toUpperCase(), 32) : prev.code,
+    effectId,
+    effectTitle: effectDef ? effectDef.title : prev.effectTitle,
+    enabled: req.body?.enabled !== undefined ? Boolean(req.body.enabled) : prev.enabled,
+    description: req.body?.description !== undefined ? sanitizeText(String(req.body.description), 200) : prev.description,
+  };
+  dataStore.cheatCodes = cheats;
+  persistStore(dataStore);
+  return res.json({ cheat: cheats[idx] });
+});
+
+app.delete('/api/admin/cheats/:id', requireAdmin, (req, res) => {
+  dataStore.cheatCodes = (dataStore.cheatCodes || []).filter((c) => c.id !== req.params.id);
+  persistStore(dataStore);
+  return res.json({ ok: true });
+});
+
+// Dub Mic Cartoon Scenes CRUD
+app.post('/api/admin/dub-scenes', requireAdmin, (req, res) => {
+  const title = sanitizeText(String(req.body?.title || ''), 120);
+  const workTitle = sanitizeText(String(req.body?.workTitle || 'كرتون كلاسيكي'), 140);
+  const videoUrl = String(req.body?.videoUrl || '').trim();
+  if (!title || !videoUrl) {
+    return res.status(400).json({ error: 'عنوان المشهد ورابط الفيديو مطلوبان.' });
+  }
+  const clipStartSec = Math.max(0, Number(req.body?.clipStartSec) || 0);
+  const clipEndSec = Math.max(clipStartSec + 5, Number(req.body?.clipEndSec) || clipStartSec + 20);
+  const durationSec = Math.max(5, clipEndSec - clipStartSec);
+  const charsInput = Array.isArray(req.body?.characters) ? req.body.characters : [];
+  const characters: DubSceneCharacter[] = charsInput.length > 0
+    ? charsInput.map((c: Partial<DubSceneCharacter>, i: number) => ({
+        id: c.id || `c${i + 1}`,
+        name: sanitizeText(String(c.name || `الشخصية ${i + 1}`), 40),
+        originalName: sanitizeText(String(c.originalName || `Character ${i + 1}`), 40),
+        roleColor: String(c.roleColor || (i % 2 === 0 ? '#F97316' : '#0EA5E9')),
+        cueStartSec: Number(c.cueStartSec ?? (i === 0 ? 0 : Math.floor(durationSec / 2))),
+        cueEndSec: Number(c.cueEndSec ?? (i === 0 ? Math.floor(durationSec / 2) : durationSec)),
+        englishHint: c.englishHint ? sanitizeText(String(c.englishHint), 120) : undefined,
+      }))
+    : [
+        { id: 'c1', name: 'الشخصية الأولى', originalName: 'Lead 1', roleColor: '#F97316', cueStartSec: 0, cueEndSec: Math.floor(durationSec / 2) },
+        { id: 'c2', name: 'الشخصية الثانية', originalName: 'Lead 2', roleColor: '#0EA5E9', cueStartSec: Math.floor(durationSec / 2), cueEndSec: durationSec },
+      ];
+
+  const scene: DubMicScene = {
+    id: `dub_${Date.now().toString(36)}`,
+    title,
+    workTitle,
+    category: sanitizeText(String(req.body?.category || 'كوميديا'), 50),
+    durationSec,
+    clipStartSec,
+    clipEndSec,
+    videoUrl,
+    thumbnailUrl: req.body?.thumbnailUrl ? String(req.body.thumbnailUrl).trim() : undefined,
+    description: sanitizeText(String(req.body?.description || 'مشهد كرتوني مضحك جاهز للدوبلاج العربي'), 280),
+    characters,
+    isCustom: true,
+  };
+  dataStore.dubScenes = [scene, ...(dataStore.dubScenes || [])];
+  persistStore(dataStore);
+  return res.status(201).json({ scene });
+});
+
+app.put('/api/admin/dub-scenes/:id', requireAdmin, (req, res) => {
+  const scenes = dataStore.dubScenes || [];
+  const idx = scenes.findIndex((s) => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'المشهد غير موجود.' });
+  const prev = scenes[idx];
+  const clipStartSec = req.body?.clipStartSec !== undefined ? Math.max(0, Number(req.body.clipStartSec)) : prev.clipStartSec;
+  const clipEndSec = req.body?.clipEndSec !== undefined ? Math.max(clipStartSec + 5, Number(req.body.clipEndSec)) : prev.clipEndSec;
+  scenes[idx] = {
+    ...prev,
+    title: req.body?.title ? sanitizeText(String(req.body.title), 120) : prev.title,
+    workTitle: req.body?.workTitle ? sanitizeText(String(req.body.workTitle), 140) : prev.workTitle,
+    category: req.body?.category ? sanitizeText(String(req.body.category), 50) : prev.category,
+    videoUrl: req.body?.videoUrl ? String(req.body.videoUrl).trim() : prev.videoUrl,
+    thumbnailUrl: req.body?.thumbnailUrl !== undefined ? (String(req.body.thumbnailUrl).trim() || undefined) : prev.thumbnailUrl,
+    description: req.body?.description !== undefined ? sanitizeText(String(req.body.description), 280) : prev.description,
+    clipStartSec,
+    clipEndSec,
+    durationSec: Math.max(5, clipEndSec - clipStartSec),
+  };
+  dataStore.dubScenes = scenes;
+  persistStore(dataStore);
+  return res.json({ scene: scenes[idx] });
+});
+
+app.delete('/api/admin/dub-scenes/:id', requireAdmin, (req, res) => {
+  dataStore.dubScenes = (dataStore.dubScenes || []).filter((s) => s.id !== req.params.id);
+  persistStore(dataStore);
+  return res.json({ ok: true });
+});
+
 // Bug Reports Admin
 app.get('/api/admin/reports', requireAdmin, (_req, res) => {
   res.json({ reports: dataStore.reports });
@@ -1105,6 +1599,9 @@ app.post('/api/admin/import', requireAdmin, (req, res) => {
       barrahCategories: Array.isArray(payload.barrahCategories) ? payload.barrahCategories : dataStore.barrahCategories,
       reports: Array.isArray(payload.reports) ? payload.reports : dataStore.reports,
       mimicSounds: Array.isArray(payload.mimicSounds) ? payload.mimicSounds : dataStore.mimicSounds,
+      cheatCodes: Array.isArray(payload.cheatCodes) ? payload.cheatCodes : dataStore.cheatCodes,
+      dubScenes: Array.isArray(payload.dubScenes) ? payload.dubScenes : dataStore.dubScenes,
+      users: payload.users && typeof payload.users === 'object' ? payload.users : dataStore.users,
     };
   } else {
     dataStore = {
@@ -1115,6 +1612,9 @@ app.post('/api/admin/import', requireAdmin, (req, res) => {
       barrahCategories: reconcileById(dataStore.barrahCategories, payload.barrahCategories),
       reports: reconcileById(dataStore.reports, payload.reports),
       mimicSounds: reconcileById(dataStore.mimicSounds, payload.mimicSounds),
+      cheatCodes: reconcileById(dataStore.cheatCodes || [], payload.cheatCodes),
+      dubScenes: reconcileById(dataStore.dubScenes || [], payload.dubScenes),
+      users: { ...(dataStore.users || {}), ...(payload.users || {}) },
     };
   }
   persistStore(dataStore);
@@ -1245,12 +1745,59 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 interface ClientMeta {
   ws: WebSocket;
   playerId: string;
+  username?: string | null;
   roomCode: string | null;
 }
 
 const rooms = new Map<string, RoomState>();
 const roomLastActivity = new Map<string, number>();
 const clients = new Map<WebSocket, ClientMeta>();
+
+function pushRoomChatNotifications(room: RoomState, sender: Player, text: string) {
+  const users = dataStore.users || {};
+  const gameTitle = dataStore.games.find((g) => g.id === room.gameId)?.title || 'غرفة جَمْر';
+  for (const p of room.players) {
+    if (p.id === sender.id) continue;
+    const rec = Object.values(users).find((u) => u.playerId === p.id);
+    if (!rec) continue;
+    pushUserNotification(rec.username, {
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'room_chat',
+      title: `رسالة جديدة في ${gameTitle} 💬`,
+      body: `${sender.name}: ${text}`,
+      fromDisplayName: sender.name,
+      fromAvatar: sender.avatar,
+      fromAvatarBg: sender.avatarBg,
+      roomCode: room.code,
+      gameId: room.gameId,
+      gameTitle,
+      read: false,
+      createdAt: Date.now(),
+    });
+  }
+}
+
+function awardDubXpAndAchievements(room: RoomState, nextDub: NonNullable<RoomState['dubMic']>) {
+  const users = dataStore.users || {};
+  let changed = false;
+  for (const p of room.players) {
+    const rec = Object.values(users).find((u) => u.playerId === p.id);
+    if (!rec) continue;
+    const pts = nextDub.scoresDelta?.[p.id] || 0;
+    rec.dubXp = (rec.dubXp || 0) + Math.max(10, pts);
+    const award = nextDub.roundAwards?.find((a) => a.playerId === p.id);
+    if (award?.title) {
+      rec.dubTitles = Array.from(new Set([award.title, ...(rec.dubTitles || [])])).slice(0, 12);
+    }
+    if (award?.achievement) {
+      rec.dubAchievements = Array.from(new Set([award.achievement, ...(rec.dubAchievements || [])])).slice(0, 12);
+    }
+    changed = true;
+  }
+  if (changed) {
+    persistStore(dataStore);
+  }
+}
 
 function touchRoom(code: string) {
   roomLastActivity.set(code, Date.now());
@@ -1365,7 +1912,7 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
     code = generateRoomCode();
   }
   const playerName = sanitizeText(String(data.playerName || 'المضيف'), 30) || 'المضيف';
-  const avatar = sanitizeText(String(data.avatar || 'char_01'), 16) || 'char_01';
+  const avatar = sanitizeAvatarPayload(data.avatar, 'char_01');
   const avatarBg = sanitizeText(String(data.avatarBg || ''), 32) || undefined;
   const isJudgeRoom = Boolean(data.isJudgeRoom) && gameId === 'ism_hayawan';
   const totalRounds = Math.max(1, Math.min(50, Number(data.totalRounds) || 5));
@@ -1421,7 +1968,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
         : fallbackPlayerId;
 
   const incomingName = sanitizeText(String(data.playerName || ''), 30);
-  const incomingAvatar = sanitizeText(String(data.avatar || ''), 16);
+  const incomingAvatar = data.avatar ? sanitizeAvatarPayload(data.avatar, '') : '';
   const incomingAvatarBg = sanitizeText(String(data.avatarBg || ''), 32);
 
   const existing = room.players.find((p) => p.id === incomingId);
@@ -1503,6 +2050,7 @@ function applyRoomActionOnServer(
         barrah: undefined,
         mafia: undefined,
         detective: undefined,
+        dubMic: undefined,
         messages: appendSystemChat(room, `تم تغيير اللعبة إلى: ${target?.title || newGameId}`),
       };
       break;
@@ -1545,17 +2093,25 @@ function applyRoomActionOnServer(
             },
           ].slice(-80),
         };
+        pushRoomChatNotifications(room, sender, text);
       }
       break;
     }
     case 'voice_signal': {
-      const targetId = String(data.targetId || '');
+      const targetId = String(data.toId || data.targetId || '');
       clients.forEach((cMeta) => {
-        if (cMeta.roomCode === room.code && (!targetId || cMeta.playerId === targetId) && cMeta.playerId !== pid) {
+        if (
+          cMeta.roomCode === room.code &&
+          (!targetId || cMeta.playerId === targetId) &&
+          cMeta.playerId !== pid
+        ) {
           sendWs(cMeta.ws, {
             type: 'voice_signal',
             fromId: pid,
+            toId: targetId || undefined,
             signal: data.signal,
+            voiceActive: data.voiceActive,
+            muted: data.muted,
           });
         }
       });
@@ -1570,6 +2126,7 @@ function applyRoomActionOnServer(
         barrah: undefined,
         mafia: undefined,
         detective: undefined,
+        dubMic: undefined,
       };
       break;
     }
@@ -1601,6 +2158,18 @@ function applyRoomActionOnServer(
           status: 'playing',
           selectedCaseId: caseId,
           detective: createInitialDetectiveState(caseId),
+        };
+      } else if (room.gameId === 'dub_mic') {
+        const mode = (['live_dub', 'habd_dub', 'group_acting', 'pvp'].includes(String(data.dubMode))
+          ? String(data.dubMode)
+          : 'live_dub') as DubMicMode;
+        const scenesPool = dataStore.dubScenes && dataStore.dubScenes.length > 0 ? dataStore.dubScenes : DEFAULT_DUB_SCENES;
+        const sceneId = String(data.selectedSceneId || scenesPool[0]?.id || '');
+        room = {
+          ...room,
+          status: 'playing',
+          dubMic: createInitialDubMicState(room.players, scenesPool, sceneId, mode),
+          messages: appendSystemChat(room, 'انطلقت جولة «مايك الدوبلاج»! استعدوا للهبد بالعربي 🎙️🎬'),
         };
       }
       break;
@@ -2184,6 +2753,327 @@ function applyRoomActionOnServer(
       }
       break;
     }
+    case 'dub_set_config': {
+      if (room.dubMic && pid === room.hostId) {
+        const scenesPool = dataStore.dubScenes && dataStore.dubScenes.length > 0 ? dataStore.dubScenes : DEFAULT_DUB_SCENES;
+        const nextMode = (['live_dub', 'habd_dub', 'group_acting', 'pvp'].includes(String(data.mode))
+          ? String(data.mode)
+          : room.dubMic.mode) as DubMicMode;
+        const nextSceneId = String(data.sceneId || room.dubMic.sceneId);
+        const scene = scenesPool.find((s) => s.id === nextSceneId) || scenesPool[0];
+        const activePlayers = room.players.filter((p) => !p.isJudge);
+        const nextAssignments: Record<string, string> = {};
+        if (scene) {
+          scene.characters.forEach((c, idx) => {
+            const existing = room.dubMic!.assignments[c.id];
+            nextAssignments[c.id] =
+              existing && activePlayers.some((p) => p.id === existing)
+                ? existing
+                : activePlayers[idx % Math.max(1, activePlayers.length)]?.id || '';
+          });
+        }
+        room = {
+          ...room,
+          dubMic: {
+            ...room.dubMic,
+            mode: nextMode,
+            sceneId: scene?.id || nextSceneId,
+            assignments: nextAssignments,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_pick_character': {
+      if (room.dubMic) {
+        const charId = String(data.characterId || '');
+        const targetPlayerId = pid === room.hostId && data.targetPlayerId ? String(data.targetPlayerId) : pid;
+        if (charId) {
+          room = {
+            ...room,
+            dubMic: {
+              ...room.dubMic,
+              assignments: {
+                ...room.dubMic.assignments,
+                [charId]: targetPlayerId,
+              },
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'dub_start_watch': {
+      if (room.dubMic && pid === room.hostId) {
+        const scenesPool = dataStore.dubScenes && dataStore.dubScenes.length > 0 ? dataStore.dubScenes : DEFAULT_DUB_SCENES;
+        const scene = scenesPool.find((s) => s.id === room.dubMic!.sceneId) || scenesPool[0];
+        const clipLen = Math.max(8, (scene?.clipEndSec || 20) - (scene?.clipStartSec || 0));
+        room = {
+          ...room,
+          dubMic: {
+            ...room.dubMic,
+            phase: 'watch_original',
+            readyPlayerIds: [],
+            phaseDeadline: Date.now() + (clipLen + 5) * 1000,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_skip_watch': {
+      if (room.dubMic && pid === room.hostId) {
+        const dm = room.dubMic;
+        const nextPhase = dm.mode === 'habd_dub' || dm.mode === 'group_acting' ? 'write_script' : 'performing';
+        const activePlayers = room.players.filter((p) => !p.isJudge);
+        room = {
+          ...room,
+          dubMic: {
+            ...dm,
+            phase: nextPhase,
+            readyPlayerIds: [],
+            activePerformerId: dm.performerQueue[0] || activePlayers[0]?.id || null,
+            phaseDeadline: nextPhase === 'write_script' ? Date.now() + 45_000 : Date.now() + 35_000,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_submit_script': {
+      if (room.dubMic) {
+        const script = sanitizeText(String(data.script || ''), 360);
+        const readyIds = room.dubMic.readyPlayerIds.includes(pid)
+          ? room.dubMic.readyPlayerIds
+          : [...room.dubMic.readyPlayerIds, pid];
+        room = {
+          ...room,
+          dubMic: {
+            ...room.dubMic,
+            scriptsByPlayer: {
+              ...room.dubMic.scriptsByPlayer,
+              [pid]: script,
+            },
+            readyPlayerIds: readyIds,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_set_ready': {
+      if (room.dubMic) {
+        const dm = room.dubMic;
+        const activePlayers = room.players.filter((p) => !p.isJudge);
+        const readyIds = dm.readyPlayerIds.includes(pid)
+          ? dm.readyPlayerIds
+          : [...dm.readyPlayerIds, pid];
+        if (dm.phase === 'watch_original' && readyIds.length >= activePlayers.length) {
+          const nextPhase = dm.mode === 'habd_dub' || dm.mode === 'group_acting' ? 'write_script' : 'performing';
+          room = {
+            ...room,
+            dubMic: {
+              ...dm,
+              phase: nextPhase,
+              readyPlayerIds: [],
+              activePerformerId: dm.performerQueue[0] || activePlayers[0]?.id || null,
+              phaseDeadline: nextPhase === 'write_script' ? Date.now() + 45_000 : Date.now() + 35_000,
+            },
+          };
+        } else if (dm.phase === 'write_script' && readyIds.length >= activePlayers.length) {
+          room = {
+            ...room,
+            dubMic: {
+              ...dm,
+              phase: 'performing',
+              readyPlayerIds: [],
+              activePerformerId: dm.performerQueue[0] || activePlayers[0]?.id || null,
+              phaseDeadline: Date.now() + 35_000,
+            },
+          };
+        } else {
+          room = {
+            ...room,
+            dubMic: {
+              ...dm,
+              readyPlayerIds: readyIds,
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'dub_set_active_performer': {
+      if (room.dubMic && pid === room.hostId) {
+        const targetId = String(data.performerId || '');
+        if (targetId) {
+          room = {
+            ...room,
+            dubMic: {
+              ...room.dubMic,
+              phase: 'performing',
+              activePerformerId: targetId,
+              phaseDeadline: Date.now() + 35_000,
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'dub_submit_take': {
+      if (room.dubMic) {
+        const dm = room.dubMic;
+        const player = room.players.find((p) => p.id === pid);
+        if (player) {
+          const charId = Object.entries(dm.assignments).find(([, assignee]) => assignee === pid)?.[0];
+          const scenesPool = dataStore.dubScenes && dataStore.dubScenes.length > 0 ? dataStore.dubScenes : DEFAULT_DUB_SCENES;
+          const scene = scenesPool.find((s) => s.id === dm.sceneId);
+          const charName = scene?.characters.find((c) => c.id === charId)?.name;
+          const newTake: DubTakeRecord = {
+            id: `take_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+            playerId: pid,
+            playerName: player.name,
+            playerAvatar: player.avatar,
+            playerAvatarBg: player.avatarBg,
+            characterId: charId,
+            characterName: charName,
+            scriptText: sanitizeText(String(data.scriptText || dm.scriptsByPlayer[pid] || ''), 360),
+            audioDataUrl:
+              typeof data.audioDataUrl === 'string' && data.audioDataUrl.startsWith('data:audio/')
+                ? data.audioDataUrl
+                : undefined,
+            durationSec: Math.max(1, Math.min(45, Number(data.durationSec) || 8)),
+            createdAt: Date.now(),
+          };
+          const filtered = dm.takes.filter((t) => t.playerId !== pid);
+          const nextIdx = dm.performerQueue.indexOf(pid) + 1;
+          const nextPerformer =
+            nextIdx > 0 && nextIdx < dm.performerQueue.length
+              ? dm.performerQueue[nextIdx]
+              : dm.activePerformerId;
+          room = {
+            ...room,
+            dubMic: {
+              ...dm,
+              takes: [...filtered, newTake],
+              activePerformerId: nextPerformer,
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'dub_go_ruined_it': {
+      if (room.dubMic && pid === room.hostId) {
+        room = {
+          ...room,
+          dubMic: {
+            ...room.dubMic,
+            phase: 'ruined_it',
+            replayMode: 'dubbed',
+            replaySyncAt: Date.now() + 800,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_set_replay': {
+      if (room.dubMic && pid === room.hostId) {
+        const modeVal = data.replayMode === 'original' ? 'original' : 'dubbed';
+        room = {
+          ...room,
+          dubMic: {
+            ...room.dubMic,
+            replayMode: modeVal,
+            replaySyncAt: Date.now() + 500,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_go_voting': {
+      if (room.dubMic && pid === room.hostId) {
+        room = {
+          ...room,
+          dubMic: {
+            ...room.dubMic,
+            phase: 'voting',
+            votes: {},
+            phaseDeadline: Date.now() + 30_000,
+          },
+        };
+      }
+      break;
+    }
+    case 'dub_cast_vote': {
+      if (room.dubMic && room.dubMic.phase === 'voting') {
+        const dm = room.dubMic;
+        const incomingVotes = (data.votes || {}) as Partial<Record<DubVoteCategory, string>>;
+        const sanitized: Partial<Record<DubVoteCategory, string>> = {};
+        (['funniest', 'best_voice', 'weirdest_dialogue', 'best_acting', 'best_lipsync'] as DubVoteCategory[]).forEach(
+          (cat) => {
+            const target = incomingVotes[cat];
+            if (typeof target === 'string' && target && target !== pid) {
+              sanitized[cat] = target;
+            }
+          }
+        );
+        if (Object.keys(sanitized).length === 0) {
+          return { room, error: 'لا يمكنك التصويت لنفسك! اختر لاعباً آخر في تصنيف واحد على الأقل.' };
+        }
+        const nextVotes = {
+          ...dm.votes,
+          [pid]: sanitized,
+        };
+        const activePlayers = room.players.filter((p) => !p.isJudge && p.connected);
+        const needed = Math.max(1, activePlayers.length || room.players.length);
+        if (Object.keys(nextVotes).length >= needed) {
+          const nextDub = computeDubMicResults({ ...dm, votes: nextVotes }, room.players);
+          room = {
+            ...room,
+            players: room.players.map((p) => ({
+              ...p,
+              score: p.score + (nextDub.scoresDelta?.[p.id] || 0),
+            })),
+            dubMic: nextDub,
+          };
+          awardDubXpAndAchievements(room, nextDub);
+        } else {
+          room = {
+            ...room,
+            dubMic: {
+              ...dm,
+              votes: nextVotes,
+            },
+          };
+        }
+      }
+      break;
+    }
+    case 'dub_finalize_results': {
+      if (room.dubMic && pid === room.hostId && room.dubMic.phase !== 'results') {
+        const nextDub = computeDubMicResults(room.dubMic, room.players);
+        room = {
+          ...room,
+          players: room.players.map((p) => ({
+            ...p,
+            score: p.score + (nextDub.scoresDelta?.[p.id] || 0),
+          })),
+          dubMic: nextDub,
+        };
+        awardDubXpAndAchievements(room, nextDub);
+      }
+      break;
+    }
+    case 'dub_play_again': {
+      if (room.dubMic && pid === room.hostId) {
+        const scenesPool = dataStore.dubScenes && dataStore.dubScenes.length > 0 ? dataStore.dubScenes : DEFAULT_DUB_SCENES;
+        const currIdx = scenesPool.findIndex((s) => s.id === room.dubMic!.sceneId);
+        const nextScene = scenesPool[(currIdx + 1) % scenesPool.length] || scenesPool[0];
+        room = {
+          ...room,
+          dubMic: createInitialDubMicState(room.players, scenesPool, nextScene?.id, room.dubMic.mode),
+        };
+      }
+      break;
+    }
     default:
       break;
   }
@@ -2310,6 +3200,62 @@ app.post('/api/rooms/action', (req, res) => {
   return res.json({ ok: true, room: sanitizeRoomForClient(result.room) });
 });
 
+app.post('/api/rooms/:code/dub-audio', (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const room = rooms.get(code);
+  if (!room || !room.dubMic) {
+    return res.status(404).json({ ok: false, error: 'الغرفة أو جولة الدوبلاج غير نشطة.' });
+  }
+  const pid = String(req.body?.playerId || '');
+  const player = room.players.find((p) => p.id === pid);
+  if (!player) {
+    return res.status(404).json({ ok: false, error: 'اللاعب غير موجود في الغرفة.' });
+  }
+  const audioDataUrl = typeof req.body?.audioDataUrl === 'string' ? req.body.audioDataUrl : '';
+  if (audioDataUrl && (!audioDataUrl.startsWith('data:audio/') || audioDataUrl.length > 4_000_000)) {
+    return res.status(400).json({ ok: false, error: 'صيغة أو حجم المقطع الصوتي غير صالح.' });
+  }
+
+  const dm = room.dubMic;
+  const charId = Object.entries(dm.assignments).find(([, assignee]) => assignee === pid)?.[0];
+  const scenesPool = dataStore.dubScenes && dataStore.dubScenes.length > 0 ? dataStore.dubScenes : DEFAULT_DUB_SCENES;
+  const scene = scenesPool.find((s) => s.id === dm.sceneId);
+  const charName = scene?.characters.find((c) => c.id === charId)?.name;
+
+  const newTake: DubTakeRecord = {
+    id: `take_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+    playerId: pid,
+    playerName: player.name,
+    playerAvatar: player.avatar,
+    playerAvatarBg: player.avatarBg,
+    characterId: charId,
+    characterName: charName,
+    scriptText: sanitizeText(String(req.body?.scriptText || dm.scriptsByPlayer[pid] || ''), 360),
+    audioDataUrl: audioDataUrl || undefined,
+    durationSec: Math.max(1, Math.min(45, Number(req.body?.durationSec) || 8)),
+    createdAt: Date.now(),
+  };
+
+  const filtered = dm.takes.filter((t) => t.playerId !== pid);
+  const nextIdx = dm.performerQueue.indexOf(pid) + 1;
+  const nextPerformer =
+    nextIdx > 0 && nextIdx < dm.performerQueue.length
+      ? dm.performerQueue[nextIdx]
+      : dm.activePerformerId;
+
+  const updatedRoom: RoomState = {
+    ...room,
+    dubMic: {
+      ...dm,
+      takes: [...filtered, newTake],
+      activePerformerId: nextPerformer,
+    },
+  };
+  rooms.set(code, updatedRoom);
+  broadcastRoom(code);
+  return res.json({ ok: true, take: newTake, room: sanitizeRoomForClient(updatedRoom) });
+});
+
 // Auto-finalize Barrah Salfa live category vote when 10s timer expires
 const barrahVoteSweep = setInterval(() => {
   const now = Date.now();
@@ -2378,6 +3324,23 @@ wss.on('connection', (ws) => {
     if (!meta) return;
     if (data.playerId && typeof data.playerId === 'string') {
       meta.playerId = data.playerId;
+    }
+    if (data.username && typeof data.username === 'string') {
+      meta.username = normalizeUsername(data.username);
+    }
+
+    if (type === 'bind_user') {
+      const uname = normalizeUsername(data.username);
+      if (uname) {
+        meta.username = uname;
+        const users = dataStore.users || {};
+        if (users[uname]) {
+          users[uname].lastSeen = Date.now();
+          if (meta.playerId) users[uname].playerId = meta.playerId;
+        }
+      }
+      sendWs(ws, { type: 'bound_user', username: meta.username || null });
+      return;
     }
 
     if (type === 'create_room') {

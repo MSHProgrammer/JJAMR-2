@@ -1,0 +1,197 @@
+import type { DubMicScene, DubVoteCategory } from '../types/jamr.ts';
+
+export const DUB_VOTE_CATEGORIES: Array<{
+  id: DubVoteCategory;
+  label: string;
+  emoji: string;
+  desc: string;
+}> = [
+  { id: 'funniest', label: 'أضحك دوبلاج', emoji: '😂', desc: 'أكثر أداء فجّر الجلسة من الضحك' },
+  { id: 'best_voice', label: 'أفضل أداء صوتي', emoji: '🎙️', desc: 'خامة الصوت وتقمّص الشخصية' },
+  { id: 'weirdest_dialogue', label: 'أغرب حوار', emoji: '🤪', desc: 'أجنّ وأغرب تأليف عربي للمشهد' },
+  { id: 'best_acting', label: 'أفضل تمثيل', emoji: '🎭', desc: 'انفعالات وحماس تمثيلي حقيقي' },
+  { id: 'best_lipsync', label: 'أفضل تطابق مع الشخصية', emoji: '👄', desc: 'توقيت الكلام مع حركة فم الشخصية' },
+];
+
+export const DUB_FUNNY_TITLES: string[] = [
+  'ملك الدوبلاج 👑',
+  'صوت الكارثة 💥',
+  'أسطورة الهبد 🤪',
+  'أفشل ممثل (بس يضحك!) 😂',
+  'مكسّر المشاهد 🎬',
+  'أفضل صوت شرير 😈',
+  'مترجم من كوكب آخر 🛸',
+  'صاحب أغرب حوار 🗣️',
+];
+
+export const DUB_ACHIEVEMENTS: Array<{ id: string; title: string; icon: string; desc: string }> = [
+  { id: 'ach_first_dub', title: 'أول مايك', icon: '🎙️', desc: 'سجّل أول مشهد دوبلاج عربي لك' },
+  { id: 'ach_ruined_it', title: 'خرّبنا المشهد رسمياً', icon: '🔥', desc: 'شاهد مقارنة قبل وبعد مع المجموعة' },
+  { id: 'ach_comedy_king', title: 'نجم الكوميديا', icon: '😂', desc: 'فز بلقب أضحك دوبلاج في جولة' },
+  { id: 'ach_habd_pro', title: 'مهندس الهبد', icon: '✍️', desc: 'ألف سيناريو عربي كامل في طور الهبد' },
+  { id: 'ach_lipsync_god', title: 'متطابق 100%', icon: '👄', desc: 'تصدّر تصويت التطابق مع الشخصية' },
+  { id: 'ach_pvp_champ', title: 'بطل المواجهة', icon: '⚔️', desc: 'فز في تحدي اللاعب ضد اللاعب' },
+];
+
+export const DEFAULT_DUB_SCENES: DubMicScene[] = [
+  {
+    id: 'dub_bugs_bunny_hunt',
+    title: 'أرنب يجنن الصياد وسط الغابة',
+    workTitle: 'Bugs Bunny — Classic Short (Public Domain)',
+    category: 'كوميديا',
+    durationSec: 22,
+    clipStartSec: 48,
+    clipEndSec: 70,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/Bugs.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'حوار ساخر وسريع بين أرنب واثق وصياد متوتر — مثالي للهبد واللهجة السعودية أو المصرية!',
+    characters: [
+      { id: 'c1', name: 'الأرنب المزعج', originalName: 'Bugs', roleColor: '#F97316', cueStartSec: 0, cueEndSec: 11, englishHint: 'مشهد استهبال وثقة عالية' },
+      { id: 'c2', name: 'الصياد المعصّب', originalName: 'Hunter', roleColor: '#0EA5E9', cueStartSec: 11, cueEndSec: 22, englishHint: 'صوت غاضب ومفجوع' },
+    ],
+  },
+  {
+    id: 'dub_popeye_spinach',
+    title: 'تحدي العضلات بالمقهى',
+    workTitle: 'Popeye the Sailor — Classic Cartoon (Public Domain)',
+    category: 'أكشن ومفاجآت',
+    durationSec: 20,
+    clipStartSec: 75,
+    clipEndSec: 95,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/Popeye.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'مواجهة درامية بين بحّار عنيد وخصم ضخم تتصاعد بسرعة — حوّلها لخناقة على آخر حبة سمبوسة!',
+    characters: [
+      { id: 'c1', name: 'البحّار الشجاع', originalName: 'Popeye', roleColor: '#10B981', cueStartSec: 0, cueEndSec: 10, englishHint: 'نبرة خشنة وواثقة' },
+      { id: 'c2', name: 'العملاق المشاغب', originalName: 'Bluto', roleColor: '#EF4444', cueStartSec: 10, cueEndSec: 20, englishHint: 'تهديد كوميدي ضخم' },
+    ],
+  },
+  {
+    id: 'dub_betty_boop_show',
+    title: 'مشهد الموقف المحرج بالسيارة',
+    workTitle: "Betty Boop — Bimbo's Auto (Public Domain)",
+    category: 'كوميديا',
+    durationSec: 20,
+    clipStartSec: 60,
+    clipEndSec: 80,
+    videoUrl: "https://archive.org/download/classic_cartoons_201603/Bimbo's%20Auto.mp4",
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'سيارة مجنونة تقف فجأة وحوار مرتبك ومضحك — أبدعوا في تبرير العطل بأعذار رهيبة!',
+    characters: [
+      { id: 'c1', name: 'السائق المرتبك', originalName: 'Bimbo', roleColor: '#8B5CF6', cueStartSec: 0, cueEndSec: 10, englishHint: 'ارتباك وسرعة كلام' },
+      { id: 'c2', name: 'الضيفة المصدومة', originalName: 'Betty', roleColor: '#EC4899', cueStartSec: 10, cueEndSec: 20, englishHint: 'دهشة وتعجب ساخر' },
+    ],
+  },
+  {
+    id: 'dub_porky_cafe',
+    title: 'طلب غريب في المطعم الكلاسيكي',
+    workTitle: "Porky's Cafe — Looney Classic (Public Domain)",
+    category: 'دراما مضحكة',
+    durationSec: 22,
+    clipStartSec: 55,
+    clipEndSec: 77,
+    videoUrl: "https://archive.org/download/classic_cartoons_201603/Porky's%20Cafe.mp4",
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'نادل متوتر وزبون يتشرط طلبات مستحيلة في مقهى شعبي — فرصة ذهبية للتأليف الكوميدي!',
+    characters: [
+      { id: 'c1', name: 'صاحب المقهى', originalName: 'Porky', roleColor: '#F59E0B', cueStartSec: 0, cueEndSec: 11, englishHint: 'تلعثم ولطف مبالغ فيه' },
+      { id: 'c2', name: 'الزبون الفيلسوف', originalName: 'Customer', roleColor: '#14B8A6', cueStartSec: 11, cueEndSec: 22, englishHint: 'صوت متعالٍ وطلبات عجيبة' },
+    ],
+  },
+  {
+    id: 'dub_superman_danger',
+    title: 'إنذار خطر وتدخل البطل الخارق',
+    workTitle: 'Superman (1941) — Fleischer Studios (Public Domain)',
+    category: 'أكشن ومفاجآت',
+    durationSec: 22,
+    clipStartSec: 95,
+    clipEndSec: 117,
+    videoUrl: 'https://archive.org/download/superman_1941/superman_1941_512kb.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/superman_1941',
+    description: 'أجواء أخبار عاجلة وبطل خارق يطير في اللحظة الحاسمة — اقلبوا الجدّية إلى كوميديا ساخرة!',
+    characters: [
+      { id: 'c1', name: 'المذيع المتوتر', originalName: 'Reporter', roleColor: '#EF4444', cueStartSec: 0, cueEndSec: 11, englishHint: 'نشرة أخبار سريعة ومبالغ فيها' },
+      { id: 'c2', name: 'البطل المنقذ', originalName: 'Clark', roleColor: '#2563EB', cueStartSec: 11, cueEndSec: 22, englishHint: 'صوت بطولي عميق ثم عفوي' },
+    ],
+  },
+  {
+    id: 'dub_ali_baba_desert',
+    title: 'قافلة الصحراء والمفاجأة العجيبة',
+    workTitle: 'Ali Baba Bound — Classic Cartoon (Public Domain)',
+    category: 'كلاسيك',
+    durationSec: 20,
+    clipStartSec: 65,
+    clipEndSec: 85,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/Ali%20Baba%20Bound.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'مطاردة كوميدية وسط الكثبان الرملية وخطط فاشلة — مثالية للهجات الخليجية والعربية الأصيلة!',
+    characters: [
+      { id: 'c1', name: 'المستكشف التائه', originalName: 'Porky', roleColor: '#D97706', cueStartSec: 0, cueEndSec: 10, englishHint: 'صرخة مفاجأة وتساؤل' },
+      { id: 'c2', name: 'رئيس العصابة', originalName: 'Leader', roleColor: '#7C3AED', cueStartSec: 10, cueEndSec: 20, englishHint: 'ضحكة شريرة وخطط مضحكة' },
+    ],
+  },
+  {
+    id: 'dub_henpecked_duck',
+    title: 'مناقشة منزلية حامية على الصباح',
+    workTitle: 'The HenPecked Duck — Classic Short (Public Domain)',
+    category: 'دراما مضحكة',
+    durationSec: 20,
+    clipStartSec: 50,
+    clipEndSec: 70,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/The%20HenPecked%20Duck.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'شخصية تدافع عن نفسها بعد تخريب مفاجئ بالبيت — مشاحنة كرتونية مليئة بالحركات التمثيلية!',
+    characters: [
+      { id: 'c1', name: 'المتّهم الهارب', originalName: 'Daffy', roleColor: '#0F766E', cueStartSec: 0, cueEndSec: 10, englishHint: 'سرعة تبرير وارتباك مضحك' },
+      { id: 'c2', name: 'الخصم الغاضب', originalName: 'Partner', roleColor: '#DC2626', cueStartSec: 10, cueEndSec: 20, englishHint: 'انفعال وحزم كوميدي' },
+    ],
+  },
+  {
+    id: 'dub_toyland_magic',
+    title: 'ليلة الألعاب السحرية في المتجر',
+    workTitle: 'Toyland Broadcast — Classic Cartoon (Public Domain)',
+    category: 'خيال',
+    durationSec: 20,
+    clipStartSec: 40,
+    clipEndSec: 60,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/Toyland.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'دمى وألعاب تتحرك وتتكلم في منتصف الليل بأصوات كرتونية غريبة ومضحكة!',
+    characters: [
+      { id: 'c1', name: 'المذيع العجيب', originalName: 'Announcer', roleColor: '#EC4899', cueStartSec: 0, cueEndSec: 10, englishHint: 'حماس إذاعي طفولي' },
+      { id: 'c2', name: 'الدمية المشاغبة', originalName: 'Toy', roleColor: '#6366F1', cueStartSec: 10, cueEndSec: 20, englishHint: 'نبرة كرتونية رفيعة' },
+    ],
+  },
+  {
+    id: 'dub_sailor_storm',
+    title: 'عاصفة البحر وقبطان السفينة',
+    workTitle: 'Sailor Cartoon — Classic Short (Public Domain)',
+    category: 'أكشن ومفاجآت',
+    durationSec: 20,
+    clipStartSec: 65,
+    clipEndSec: 85,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/Sailor.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'مغامرة بحرية وأوامر متضاربة على سطح السفينة وسط الأمواج — دوبلاج مليء بالصياح والمفاجآت!',
+    characters: [
+      { id: 'c1', name: 'القبطان العنيد', originalName: 'Captain', roleColor: '#0284C7', cueStartSec: 0, cueEndSec: 10, englishHint: 'أوامر بحرية سريعة' },
+      { id: 'c2', name: 'المساعد الكسول', originalName: 'Mate', roleColor: '#F97316', cueStartSec: 10, cueEndSec: 20, englishHint: 'تذمر وأعذار مضحكة' },
+    ],
+  },
+  {
+    id: 'dub_coy_decoy',
+    title: 'حيلة المطبعة والقصص الكرتونية',
+    workTitle: 'A Coy Decoy — Porky & Daffy (Public Domain)',
+    category: 'كلاسيك',
+    durationSec: 22,
+    clipStartSec: 70,
+    clipEndSec: 92,
+    videoUrl: 'https://archive.org/download/classic_cartoons_201603/A%20Coy%20Decoy.mp4',
+    thumbnailUrl: 'https://archive.org/services/img/classic_cartoons_201603',
+    description: 'شخصيات تخرج من الكتب وتتصارع في مشهد فوضوي سريع الإيقاع — ممتاز للتجارب والأصوات المتنوعة!',
+    characters: [
+      { id: 'c1', name: 'البطل المغرور', originalName: 'Daffy', roleColor: '#9333EA', cueStartSec: 0, cueEndSec: 11, englishHint: 'صوت مسرحي استعراضي' },
+      { id: 'c2', name: 'الراوي المصدوم', originalName: 'Porky', roleColor: '#16A34A', cueStartSec: 11, cueEndSec: 22, englishHint: 'دهشة وتعليق سريع' },
+    ],
+  },
+];

@@ -29,6 +29,7 @@ interface HomeScreenProps {
   onUpdatePlayerName: (name: string) => void;
   onUpdatePlayerAvatar: (avatarId: string) => void;
   onUpdatePlayerAvatarBg: (bg: string) => void;
+  onOpenAvatarCropper?: () => void;
   onSelectOfflineGame: (game: GameConfig) => void;
   onSelectOnlineCreate: (gameId?: string) => void;
   onSelectOnlineJoin: () => void;
@@ -43,6 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onUpdatePlayerName,
   onUpdatePlayerAvatar,
   onUpdatePlayerAvatarBg,
+  onOpenAvatarCropper,
   onSelectOfflineGame,
   onSelectOnlineCreate,
   onSelectOnlineJoin,
@@ -210,9 +212,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
             {showAvatarDrawer && (
               <div className="p-4 rounded-2xl bg-white/95 border-2 border-amber-300 shadow-lg space-y-3">
-                <div className="flex items-center justify-between text-xs font-black text-[#23140E]">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-black text-[#23140E]">
                   <span>اختر شخصيتك الكرتونية (15 شخصية):</span>
-                  <span className="text-orange-600">{avatarInfo.tagline}</span>
+                  <div className="flex items-center gap-2">
+                    {onOpenAvatarCropper && (
+                      <button
+                        type="button"
+                        onClick={onOpenAvatarCropper}
+                        className="px-3 py-1 rounded-full bg-gradient-to-l from-orange-500 to-amber-500 text-white text-[11px] font-black cursor-pointer"
+                      >
+                        📸 صورة من الاستوديو (قص دائري)
+                      </button>
+                    )}
+                    <span className="text-orange-600">{avatarInfo.tagline}</span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-5 sm:grid-cols-8 gap-2">
                   {CHARACTER_AVATARS.map((char) => (
@@ -354,6 +367,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </motion.button>
       </section>
 
+      {/* Most Played Featured Section */}
+      {games.some((g) => g.isMostPlayed && g.isActive && !g.underMaintenance) && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Flame className="w-5 h-5 text-orange-500" />
+            <h2 className="text-lg sm:text-xl font-black text-[#23140E]">الأكثر لعباً 🔥</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {games
+              .filter((g) => g.isMostPlayed && g.isActive && !g.underMaintenance)
+              .map((g) => (
+                <button
+                  key={`most_${g.id}`}
+                  type="button"
+                  onClick={() => handleCardClick(g)}
+                  className="text-right rounded-2xl bg-gradient-to-l from-amber-50 to-orange-50/80 hover:from-amber-100 hover:to-orange-100 border-2 border-orange-300 p-3.5 flex items-center gap-3 shadow-xs cursor-pointer transition"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-white border border-amber-200 flex items-center justify-center overflow-hidden shrink-0">
+                    {g.imageUrl ? (
+                      <img src={g.imageUrl} alt={g.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-2xl">{g.icon}</span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-black text-[#23140E] truncate">{g.title}</div>
+                    <div className="text-[11px] font-bold text-orange-700 truncate">{g.subtitle}</div>
+                  </div>
+                </button>
+              ))}
+          </div>
+        </section>
+      )}
+
       {/* Filter Tabs + Games Grid */}
       <section className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -421,16 +468,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     )}
                   </div>
 
-                  <div className="relative z-10 flex flex-col items-end gap-2">
+                  <div className="relative z-10 flex flex-col items-end gap-1.5">
                     {locked ? (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400 text-[#23140E] text-xs font-black shadow">
                         <Wrench className="w-3.5 h-3.5" />
                         <span>🔧 تحت التعديل والصيانة</span>
                       </span>
                     ) : (
-                      <span className="text-xs font-black text-[#23140E] bg-white/90 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-amber-200 shadow-xs">
-                        {game.tags[0] || game.category}
-                      </span>
+                      <>
+                        {game.isMostPlayed && (
+                          <span className="text-[11px] font-black text-white bg-gradient-to-l from-orange-500 to-rose-500 px-2.5 py-0.5 rounded-xl shadow">
+                            الأكثر لعباً 🔥
+                          </span>
+                        )}
+                        <span className="text-xs font-black text-[#23140E] bg-white/90 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-amber-200 shadow-xs">
+                          {game.tags[0] || game.category}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>

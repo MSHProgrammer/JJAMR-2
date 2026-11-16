@@ -8,6 +8,7 @@ export type GameId =
   | 'barrah_salfa'
   | 'mafia_no_hakam'
   | 'smart_detective'
+  | 'dub_mic'
   | 'sound_mimic';
 
 export interface GameConfig {
@@ -27,6 +28,7 @@ export interface GameConfig {
   supportsOnline: boolean;
   isActive: boolean;
   underMaintenance: boolean;
+  isMostPlayed?: boolean;
   maintenanceNote?: string;
   bgGradient: string;
   accentColor: string;
@@ -259,6 +261,133 @@ export interface MafiaOnlineState {
   winner: 'citizens' | 'mafia' | null;
 }
 
+export type DubMicMode = 'live_dub' | 'habd_dub' | 'group_acting' | 'pvp';
+
+export type DubMicPhase =
+  | 'setup'
+  | 'watch_original'
+  | 'write_script'
+  | 'performing'
+  | 'ruined_it'
+  | 'voting'
+  | 'results';
+
+export type DubVoteCategory =
+  | 'funniest'
+  | 'best_voice'
+  | 'weirdest_dialogue'
+  | 'best_acting'
+  | 'best_lipsync';
+
+export interface DubSceneCharacter {
+  id: string;
+  name: string;
+  originalName: string;
+  roleColor: string;
+  cueStartSec: number;
+  cueEndSec: number;
+  englishHint?: string;
+}
+
+export interface DubMicScene {
+  id: string;
+  title: string;
+  workTitle: string;
+  category: string;
+  durationSec: number;
+  clipStartSec: number;
+  clipEndSec: number;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  description: string;
+  characters: DubSceneCharacter[];
+  isCustom?: boolean;
+}
+
+export interface DubTakeRecord {
+  id: string;
+  playerId: string;
+  playerName: string;
+  playerAvatar: string;
+  playerAvatarBg?: string;
+  characterId?: string;
+  characterName?: string;
+  scriptText?: string;
+  audioDataUrl?: string;
+  durationSec: number;
+  createdAt: number;
+}
+
+export interface DubMicState {
+  mode: DubMicMode;
+  phase: DubMicPhase;
+  sceneId: string;
+  assignments: Record<string, string>;
+  readyPlayerIds: string[];
+  scriptsByPlayer: Record<string, string>;
+  takes: DubTakeRecord[];
+  activePerformerId?: string | null;
+  performerQueue: string[];
+  phaseDeadline: number | null;
+  replaySyncAt?: number | null;
+  replayMode?: 'dubbed' | 'original';
+  votes: Record<string, Partial<Record<DubVoteCategory, string>>>;
+  scoresDelta?: Record<string, number>;
+  winnerPlayerId?: string | null;
+  roundAwards?: Array<{
+    playerId: string;
+    playerName: string;
+    title: string;
+    achievement?: string;
+    points: number;
+  }>;
+}
+
+export interface CheatCodeConfig {
+  id: string;
+  code: string;
+  effectId: number;
+  effectTitle: string;
+  description?: string;
+  enabled: boolean;
+  usageCount: number;
+  createdAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  type: 'friend_request' | 'room_invite' | 'room_chat';
+  title: string;
+  body: string;
+  fromUsername?: string;
+  fromDisplayName?: string;
+  fromAvatar?: string;
+  fromAvatarBg?: string;
+  roomCode?: string;
+  gameId?: string;
+  gameTitle?: string;
+  read: boolean;
+  createdAt: number;
+}
+
+export interface UserRecord {
+  username: string;
+  playerId: string;
+  displayName: string;
+  avatar: string;
+  avatarBg?: string;
+  friends: string[];
+  incomingRequests: string[];
+  outgoingRequests: string[];
+  notifications: AppNotification[];
+  dubXp?: number;
+  dubTitles?: string[];
+  dubAchievements?: string[];
+  lastSeen: number;
+  currentRoomCode?: string | null;
+  currentGameId?: string | null;
+}
+
 export interface RoomState {
   code: string;
   hostId: string;
@@ -276,6 +405,7 @@ export interface RoomState {
   barrah?: BarrahOnlineState;
   mafia?: MafiaOnlineState;
   detective?: DetectiveOnlineState;
+  dubMic?: DubMicState;
 }
 
 export interface DataStoreSnapshot {
@@ -286,4 +416,7 @@ export interface DataStoreSnapshot {
   barrahCategories: BarrahCategory[];
   reports: BugReport[];
   mimicSounds: MimicSound[];
+  cheatCodes?: CheatCodeConfig[];
+  dubScenes?: DubMicScene[];
+  users?: Record<string, UserRecord>;
 }

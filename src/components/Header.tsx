@@ -7,46 +7,89 @@ import {
   BookOpen,
   Volume2,
   VolumeX,
-  Shield,
   Sparkles,
+  Users,
+  Bell,
+  Palette,
+  KeyRound,
+  AlertTriangle,
+  Camera,
 } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
 import { JamrFlameLogo, FestiveGarlandStrip } from './FestiveDecor';
 import { CharacterAvatar } from './CharacterAvatar';
 import { useCharacterReaction } from '../context/CharacterReactionContext';
-import { AVATAR_BG_PRESETS, CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
+import {
+  AVATAR_BG_PRESETS,
+  CHARACTER_AVATARS,
+  resolveCharacterAvatar,
+} from '../data/characterAvatars';
 
 interface HeaderProps {
   playerName: string;
   playerAvatar: string;
   playerAvatarBg: string;
+  username?: string;
+  unreadNotifications?: number;
+  activeCheatsCount?: number;
   onUpdatePlayerName: (name: string) => void;
   onUpdatePlayerAvatar: (avatarId: string) => void;
   onUpdatePlayerAvatarBg: (bg: string) => void;
+  onOpenAvatarCropper: () => void;
   isInMatch: boolean;
   isHome: boolean;
   onGoHome: () => void;
   onResetMatch: () => void;
   onOpenRules: () => void;
-  onOpenAdmin: () => void;
+  onOpenFriends: () => void;
+  onOpenNotifications: () => void;
+  onOpenThemeCustomizer: () => void;
+  onOpenSecretCodes: () => void;
+  onOpenReport: () => void;
 }
+
+const ThreeStackedArrowsIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <polyline points="7 5 12 9 17 5" />
+    <polyline points="7 11 12 15 17 11" />
+    <polyline points="7 17 12 21 17 17" />
+  </svg>
+);
 
 export const Header: React.FC<HeaderProps> = ({
   playerName,
   playerAvatar,
   playerAvatarBg,
+  username,
+  unreadNotifications = 0,
+  activeCheatsCount = 0,
   onUpdatePlayerName,
   onUpdatePlayerAvatar,
   onUpdatePlayerAvatarBg,
+  onOpenAvatarCropper,
   isInMatch,
   isHome,
   onGoHome,
   onResetMatch,
   onOpenRules,
-  onOpenAdmin,
+  onOpenFriends,
+  onOpenNotifications,
+  onOpenThemeCustomizer,
+  onOpenSecretCodes,
+  onOpenReport,
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [draftName, setDraftName] = useState(playerName);
   const [soundOn, setSoundOn] = useState(() => SoundFX.isEnabled());
 
@@ -70,6 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3">
         {/* Right Zone: Brand */}
         <button
+          type="button"
           onClick={() => {
             SoundFX.playClick();
             onGoHome();
@@ -85,6 +129,14 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-[11px] font-black tracking-wider px-2 py-0.5 rounded-lg bg-gradient-to-l from-amber-100 to-orange-100 text-orange-700 border border-orange-200">
                 JAMR
               </span>
+              {activeCheatsCount > 0 && (
+                <span
+                  title="أكواد سرية مفعلة"
+                  className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-[#23140E]"
+                >
+                  👑
+                </span>
+              )}
             </div>
             <span className="text-[11px] text-orange-600 font-extrabold whitespace-nowrap hidden sm:block">
               ولّع جمعتكم 🔥
@@ -94,7 +146,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Center Zone: Reactive Character Companion + Match / Name */}
         <div className="relative flex items-center justify-center gap-2 min-w-0">
-          {/* Interactive Reactive Character */}
           <button
             type="button"
             onClick={() => {
@@ -133,6 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-24 sm:w-36 bg-transparent text-[#23140E] text-xs sm:text-sm font-bold focus:outline-none"
               />
               <button
+                type="button"
                 onClick={saveName}
                 className="p-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer"
                 title="حفظ"
@@ -142,6 +194,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           ) : (
             <button
+              type="button"
               onClick={() => {
                 setDraftName(playerName);
                 setEditingName(true);
@@ -155,19 +208,29 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Quick Character & Background Switcher Popover */}
+          {/* Quick Character & Studio Upload Popover */}
           {showAvatarMenu && (
             <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowAvatarMenu(false)}
-              />
+              <div className="fixed inset-0 z-40" onClick={() => setShowAvatarMenu(false)} />
               <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 w-80 max-w-[92vw] rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-3.5 space-y-3">
                 <div className="flex items-center justify-between text-xs font-black text-[#23140E]">
                   <span>اختر شخصيتك 🎨</span>
                   <span className="text-orange-600">{avatarInfo.tagline}</span>
                 </div>
-                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto">
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAvatarMenu(false);
+                    onOpenAvatarCropper();
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>إضافة صورة من الاستوديو (قص دائري) 📸</span>
+                </button>
+
+                <div className="grid grid-cols-5 gap-1.5 max-h-44 overflow-y-auto">
                   {CHARACTER_AVATARS.map((char) => (
                     <button
                       key={char.id}
@@ -232,10 +295,11 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Left Zone: Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {/* Left Zone: Consolidated "المزيد" Button (3 stacked arrows) */}
+        <div className="relative flex items-center gap-1.5 sm:gap-2 shrink-0">
           {isInMatch && (
             <button
+              type="button"
               onClick={() => {
                 SoundFX.playClick();
                 onResetMatch();
@@ -249,6 +313,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {!isHome && (
             <button
+              type="button"
               onClick={() => {
                 SoundFX.playClick();
                 onGoHome();
@@ -260,39 +325,148 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
+          {/* Single Unified "المزيد" Menu Trigger */}
           <button
+            type="button"
             onClick={() => {
               SoundFX.playClick();
-              onOpenRules();
+              setShowMoreMenu((v) => !v);
             }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-[#23140E] text-xs font-extrabold whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+            aria-expanded={showMoreMenu}
+            className="relative flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-l from-amber-100 to-orange-100 hover:from-amber-200 hover:to-orange-200 border-2 border-orange-300 text-orange-950 text-xs sm:text-sm font-black whitespace-nowrap cursor-pointer shadow-xs transition"
           >
-            <BookOpen className="w-3.5 h-3.5 text-orange-500" />
-            <span className="hidden sm:inline">القواعد</span>
+            <ThreeStackedArrowsIcon className="w-4 h-4 text-orange-600" />
+            <span>المزيد</span>
+            {unreadNotifications > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black leading-none">
+                {unreadNotifications}
+              </span>
+            )}
           </button>
 
-          <button
-            onClick={() => {
-              const next = SoundFX.toggle();
-              setSoundOn(next);
-            }}
-            className="p-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-[#23140E] cursor-pointer shadow-xs transition-colors"
-            title={soundOn ? 'كتم الصوت' : 'تفعيل الصوت'}
-            aria-label="تبديل الصوت"
-          >
-            {soundOn ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
-          </button>
+          {showMoreMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+              <div className="absolute left-0 top-12 z-50 w-64 rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-2 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenFriends();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-teal-600" />
+                    <span>الأصدقاء</span>
+                  </span>
+                  {username ? (
+                    <span className="text-[10px] font-mono text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">
+                      @{username}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-orange-600">أنشئ @يوزر</span>
+                  )}
+                </button>
 
-          <button
-            onClick={() => {
-              SoundFX.playClick();
-              onOpenAdmin();
-            }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-gradient-to-l from-amber-100 to-orange-100 hover:from-amber-200 hover:to-orange-200 border border-orange-200 text-orange-900 text-xs font-black whitespace-nowrap cursor-pointer transition-colors"
-          >
-            <Shield className="w-3.5 h-3.5 text-orange-600" />
-            <span className="hidden md:inline">الإدارة</span>
-          </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenNotifications();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-orange-500" />
+                    <span>الإشعارات</span>
+                  </span>
+                  {unreadNotifications > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">
+                      {unreadNotifications} جديد
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenThemeCustomizer();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <Palette className="w-4 h-4 text-purple-600" />
+                  <span>تعديل الألوان 🎨</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenSecretCodes();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <KeyRound className="w-4 h-4 text-amber-600" />
+                  <span>أكواد سرية 🔐</span>
+                </button>
+
+                <div className="border-t border-amber-100 my-1" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenRules();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <BookOpen className="w-4 h-4 text-orange-500" />
+                  <span>القواعد</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = SoundFX.toggle();
+                    setSoundOn(next);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    {soundOn ? (
+                      <Volume2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <VolumeX className="w-4 h-4 text-slate-400" />
+                    )}
+                    <span>المؤثرات الصوتية</span>
+                  </span>
+                  <span className="text-[11px] font-bold text-[#6B4E40]">
+                    {soundOn ? 'مفعّل' : 'مكتوم'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenReport();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-700 text-xs font-black cursor-pointer"
+                >
+                  <AlertTriangle className="w-4 h-4 text-rose-500" />
+                  <span>الإبلاغ عن خلل</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
       <div className="border-t border-amber-100/80 bg-[#FFF8EC]/80">

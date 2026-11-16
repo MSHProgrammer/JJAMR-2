@@ -1,4 +1,4 @@
-import { BarrahCategory, RoomState } from '../types/jamr';
+import { AppNotification, BarrahCategory, RoomState } from '../types/jamr';
 import { LocalRoomCoordinator } from './LocalRoomCoordinator';
 
 export type SocketStatus = 'disconnected' | 'connecting' | 'connected' | 'p2p';
@@ -9,6 +9,7 @@ export interface SocketCallbacks {
   onError: (msg: string) => void;
   onKicked: () => void;
   onVoiceSignal?: (payload: Record<string, unknown>) => void;
+  onNotification?: (notif: AppNotification, targetUsername?: string) => void;
 }
 
 const STATIC_HOST_SUFFIXES = ['pages.dev', 'netlify.app', 'github.io'];
@@ -40,12 +41,19 @@ export class JamrSocketClient {
   private lastKnownName = '';
   private lastKnownAvatar = 'char_01';
   private lastKnownAvatarBg = 'lavender';
+  private lastKnownUsername = '';
   private playerId: string;
   private categories: BarrahCategory[] = [];
+  private voiceListeners = new Set<(payload: Record<string, unknown>) => void>();
 
   constructor(callbacks: SocketCallbacks) {
     this.callbacks = callbacks;
     this.playerId = getOrCreateSessionPlayerId();
+    try {
+      this.lastKnownUsername = window.localStorage.getItem('jamr_username') || '';
+    } catch {
+      // ignore
+    }
   }
 
   public getPlayerId(): string {
@@ -54,6 +62,20 @@ export class JamrSocketClient {
 
   public isP2P(): boolean {
     return this.isP2PMode;
+  }
+
+  public onVoiceSignal(listener: (payload: Record<string, unknown>) => void): () => void {
+    this.voiceListeners.add(listener);
+    return () => {
+      this.voiceListeners.delete(listener);
+    };
+  }
+
+  public bindUser(username: string) {
+    this.lastKnownUsername = username;
+    if (username) {
+      this.sendWsRaw({ type: 'bind_user', username });
+    }
   }
 
   public setCategories(cats: BarrahCategory[]) {
@@ -131,6 +153,10 @@ export class JamrSocketClient {
           this.callbacks.onStatusChange('connected', false);
           this.startHeartbeat();
           this.stopFallbackPoll();
+
+          if (this.lastKnownUsername) {
+            this.sendWsRaw({ type: 'bind_user', username: this.lastKnownUsername });
+          }
 
           // Bind WebSocket socket meta to current room if user already created/joined via REST
           if (this.currentRoomCode) {
@@ -282,6 +308,12 @@ export class JamrSocketClient {
       this.callbacks.onKicked();
     } else if (type === 'voice_signal') {
       this.callbacks.onVoiceSignal?.(data);
+      this.voiceListeners.forEach((cb) => cb(data));
+    } else if (type === 'notification' && data.notification) {
+      this.callbacks.onNotification?.(
+        data.notification as AppNotification,
+        typeof data.targetUsername === 'string' ? data.targetUsername : undefined
+      );
     }
   }
 

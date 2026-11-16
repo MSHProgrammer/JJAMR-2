@@ -60,6 +60,8 @@ export const DetectiveAccusationAndReveal: React.FC<DetectiveAccusationAndReveal
   const [selectedSuspectId, setSelectedSuspectId] = useState<string>('');
   const [reason, setReason] = useState('');
   const [confirmReveal, setConfirmReveal] = useState(false);
+  const [validationError, setValidationError] = useState<string>('');
+  const suspectsGridRef = React.useRef<HTMLDivElement | null>(null);
 
   const isCaseClosed =
     mode === 'online'
@@ -385,15 +387,23 @@ export const DetectiveAccusationAndReveal: React.FC<DetectiveAccusationAndReveal
       )}
 
       {/* Suspect Selection Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div
+        ref={suspectsGridRef}
+        className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 rounded-2xl p-1 transition ${
+          validationError && !selectedSuspectId ? 'ring-2 ring-rose-500/80 bg-rose-950/20' : ''
+        }`}
+      >
         {caseData.suspects.map((s) => {
           const isPicked = selectedSuspectId === s.id;
           return (
             <button
               key={s.id}
               type="button"
-              onClick={() => setSelectedSuspectId(s.id)}
-              className={`text-right rounded-2xl p-4 border-2 transition flex items-center gap-3 ${
+              onClick={() => {
+                setSelectedSuspectId(s.id);
+                setValidationError('');
+              }}
+              className={`text-right rounded-2xl p-4 border-2 transition flex items-center gap-3 cursor-pointer ${
                 isPicked
                   ? 'bg-[#2C1418] border-[#E5C16C] shadow-lg shadow-[#7A1219]/30'
                   : 'bg-[#0D0C10] hover:bg-[#191720] border-white/10'
@@ -440,19 +450,38 @@ export const DetectiveAccusationAndReveal: React.FC<DetectiveAccusationAndReveal
         </label>
       )}
 
+      {validationError && (
+        <div className="rounded-xl bg-[#2D1216] border border-[#E55B66] px-4 py-3 text-xs font-black text-[#FFAEB5] flex items-center gap-2">
+          <ShieldAlert size={16} className="shrink-0" />
+          <span>{validationError}</span>
+        </div>
+      )}
+
+      {lastAttemptFeedback && !lastAttemptFeedback.correct && (
+        <div className="rounded-xl bg-[#2D1216] border border-[#B8333C] px-4 py-2.5 text-xs font-bold text-[#F08088] flex items-center gap-2">
+          <XCircle size={15} className="shrink-0" />
+          <span>{lastAttemptFeedback.message}</span>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          disabled={!selectedSuspectId || verifying}
+          disabled={verifying}
           onClick={() => {
-            if (!selectedSuspectId) return;
+            if (!selectedSuspectId) {
+              setValidationError('يرجى الضغط لاختيار أحد المشتبه بهم من القائمة أعلاه أولاً قبل تثبيت الاتهام!');
+              suspectsGridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              return;
+            }
+            setValidationError('');
             if (mode === 'online') {
               onSubmitOnlineAccusation?.(selectedSuspectId, reason.trim());
             } else {
               onSubmitSoloAccusation?.(selectedSuspectId, reason.trim(), confirmReveal);
             }
           }}
-          className="flex-1 min-w-[220px] bg-[#7A1219] hover:bg-[#961820] disabled:opacity-50 text-white border border-[#C89B3C]/50 py-3.5 px-6 rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-xl transition"
+          className="flex-1 min-w-[220px] bg-[#7A1219] hover:bg-[#961820] disabled:opacity-50 text-white border border-[#C89B3C]/50 py-3.5 px-6 rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-xl transition cursor-pointer"
         >
           {verifying ? <Loader2 size={17} className="animate-spin" /> : <Gavel size={17} />}
           {mode === 'online' ? 'اعتماد وإرسال الاتهام السري' : 'تثبيت الاتهام وإغلاق القضية'}
