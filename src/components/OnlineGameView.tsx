@@ -15,8 +15,10 @@ import {
   Camera,
   QrCode,
   ScanLine,
+  Tv,
+  Lock,
 } from 'lucide-react';
-import { AppNotification, BarrahCategory, DubMicScene, GameConfig, RoomState } from '../types/jamr';
+import { AppNotification, BarrahCategory, DubMicScene, GameConfig, JamrPlusStatus, RoomState } from '../types/jamr';
 import { getOrCreateSessionPlayerId, JamrSocketClient, SocketStatus } from '../network/socketClient';
 import { SoundFX } from '../utils/soundFx';
 import { BrokenTvEngine } from './games/BrokenTvEngine';
@@ -40,6 +42,8 @@ import {
 import { PUBLIC_DETECTIVE_CASES } from '../data/detectivePublicCases';
 import { CharacterAvatar } from './CharacterAvatar';
 import { useCharacterReaction } from '../context/CharacterReactionContext';
+import { isPlusActive } from '../utils/plusManager';
+import { PlayerNameWithPlus } from './PlusBadge';
 
 interface OnlineGameViewProps {
   initialTab: 'create' | 'join';
@@ -49,9 +53,14 @@ interface OnlineGameViewProps {
   playerAvatar?: string;
   playerAvatarBg?: string;
   username?: string;
+  plusStatus: JamrPlusStatus;
   onUpdatePlayerAvatar?: (avatarId: string) => void;
   onUpdatePlayerAvatarBg?: (bg: string) => void;
   onOpenAvatarCropper?: () => void;
+  onOpenPlusModal?: () => void;
+  onOpenTvCast?: (roomCode?: string) => void;
+  onClaimAdminUsername?: (username: string) => void;
+  onPairTvCode?: (tvCode: string) => void;
   onOpenFriendsInvite?: () => void;
   onRoomCodeChange?: (code: string | null) => void;
   onNotification?: (notif: AppNotification) => void;
@@ -72,9 +81,14 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   playerAvatar,
   playerAvatarBg,
   username,
+  plusStatus,
   onUpdatePlayerAvatar,
   onUpdatePlayerAvatarBg,
   onOpenAvatarCropper,
+  onOpenPlusModal,
+  onOpenTvCast,
+  onClaimAdminUsername,
+  onPairTvCode,
   onOpenFriendsInvite,
   onRoomCodeChange,
   onNotification,
@@ -84,6 +98,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   onMatchStateChange,
   onExit,
 }) => {
+  const hasPlus = isPlusActive(plusStatus);
   const onlineGames = games.filter((g) => g.supportsOnline && g.isActive && !g.underMaintenance);
   const { triggerReaction, setTypingActive } = useCharacterReaction();
 
@@ -466,29 +481,46 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               <button onClick={() => setShowFloatingChat(false)} className="cursor-pointer text-[#5A3E32]">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs bg-[#FFFDF9]">
-              {room.messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex items-start gap-2 ${
-                    m.isSystem ? 'text-orange-700 font-bold bg-amber-50 p-1.5 rounded-lg' : 'text-[#23140E]'
-                  }`}
-                >
-                  {m.isSystem ? (
-                    <span className="shrink-0">🔥</span>
-                  ) : (
-                    <CharacterAvatar
-                      avatarId={m.senderAvatar}
-                      backgroundColor={m.senderAvatarBg}
-                      size={24}
-                      interactive={false}
-                    />
-                  )}
-                  <div className="min-w-0">
-                    <span className="font-black">{m.senderName}: </span>
-                    <span className="break-words">{m.text}</span>
+              {room.messages.map((m) => {
+                const senderPlayer = room.players.find((p) => p.name === m.senderName);
+                const msgIsPlus = Boolean(m.senderIsPlus || senderPlayer?.isPlus);
+                const msgGlow = m.senderGlow || senderPlayer?.plusGlow;
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex items-start gap-2 ${
+                      m.isSystem ? 'text-orange-700 font-bold bg-amber-50 p-1.5 rounded-lg' : 'text-[#23140E]'
+                    }`}
+                  >
+                    {m.isSystem ? (
+                      <span className="shrink-0">🔥</span>
+                    ) : (
+                      <CharacterAvatar
+                        avatarId={m.senderAvatar}
+                        backgroundColor={m.senderAvatarBg}
+                        size={24}
+                        isPlus={msgIsPlus}
+                        plusGlow={msgGlow}
+                        interactive={false}
+                      />
+                    )}
+                    <div className="min-w-0">
+                      {!m.isSystem && (
+                        <span className="font-black inline-flex items-center gap-1 ml-1">
+                          <PlayerNameWithPlus
+                            name={m.senderName}
+                            isPlus={msgIsPlus}
+                            plusGlow={msgGlow}
+                            compact
+                          />
+                          <span>:</span>
+                        </span>
+                      )}
+                      <span className="break-words">{m.text}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="p-2 border-t border-amber-200 bg-white flex gap-1.5">
               <input
@@ -569,6 +601,19 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span>{copiedLink ? 'تم نسخ رابط الدعوة!' : 'نسخ رابط الدعوة'}</span>
             </button>
+            {onOpenTvCast && (
+              <button
+                type="button"
+                onClick={() => {
+                  SoundFX.playClick();
+                  onOpenTvCast(room.code);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-l from-[#1C140A] to-[#110C07] border border-amber-400/70 text-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Tv className="w-4 h-4 text-amber-400" />
+                <span>بث للشاشة 📺</span>
+              </button>
+            )}
             {onOpenFriendsInvite && (
               <button
                 type="button"
@@ -724,14 +769,25 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                         backgroundColor={p.avatarBg}
                         size={38}
                         mood={p.id === localPlayerId ? 'excited' : 'idle'}
+                        isPlus={p.isPlus}
+                        plusGlow={p.plusGlow}
+                        plusFrame={p.plusFrame}
                         interactive={false}
                       />
                       <div className="truncate">
                         <div className="text-sm font-black text-[#23140E] flex items-center gap-1.5">
-                          <span className="truncate">{p.name}</span>
+                          <PlayerNameWithPlus
+                            name={p.name}
+                            isPlus={p.isPlus}
+                            plusGlow={p.plusGlow}
+                            compact
+                          />
                           {p.isHost && <Crown className="w-4 h-4 text-amber-500 shrink-0" />}
                           {p.isJudge && <Gavel className="w-3.5 h-3.5 text-orange-500 shrink-0" />}
                         </div>
+                        {p.isPlus && p.plusTitle && (
+                          <div className="text-[10px] font-bold text-amber-700 truncate">{p.plusTitle}</div>
+                        )}
                       </div>
                     </div>
 
@@ -784,31 +840,48 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
           <div className="lg:col-span-5 rounded-3xl bg-white border-2 border-amber-200 shadow-sm p-5 flex flex-col h-[430px]">
             <h3 className="text-base font-black text-[#23140E] mb-3">الدردشة المباشرة 💬</h3>
             <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
-              {room.messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`p-2.5 rounded-xl flex items-start gap-2.5 ${
-                    m.isSystem
-                      ? 'bg-amber-50 border border-amber-200 text-orange-800 font-bold'
-                      : 'bg-[#FFF8EE] border border-amber-100 text-[#23140E]'
-                  }`}
-                >
-                  {m.isSystem ? (
-                    <span className="text-base shrink-0">🔥</span>
-                  ) : (
-                    <CharacterAvatar
-                      avatarId={m.senderAvatar}
-                      backgroundColor={m.senderAvatarBg}
-                      size={28}
-                      interactive={false}
-                    />
-                  )}
-                  <div className="min-w-0">
-                    <span className="font-black text-[#23140E]">{m.senderName}: </span>
-                    <span className="break-words">{m.text}</span>
+              {room.messages.map((m) => {
+                const senderPlayer = room.players.find((p) => p.name === m.senderName);
+                const msgIsPlus = Boolean(m.senderIsPlus || senderPlayer?.isPlus);
+                const msgGlow = m.senderGlow || senderPlayer?.plusGlow;
+                return (
+                  <div
+                    key={m.id}
+                    className={`p-2.5 rounded-xl flex items-start gap-2.5 ${
+                      m.isSystem
+                        ? 'bg-amber-50 border border-amber-200 text-orange-800 font-bold'
+                        : 'bg-[#FFF8EE] border border-amber-100 text-[#23140E]'
+                    }`}
+                  >
+                    {m.isSystem ? (
+                      <span className="text-base shrink-0">🔥</span>
+                    ) : (
+                      <CharacterAvatar
+                        avatarId={m.senderAvatar}
+                        backgroundColor={m.senderAvatarBg}
+                        size={28}
+                        isPlus={msgIsPlus}
+                        plusGlow={msgGlow}
+                        interactive={false}
+                      />
+                    )}
+                    <div className="min-w-0">
+                      {!m.isSystem && (
+                        <span className="font-black text-[#23140E] inline-flex items-center gap-1 ml-1">
+                          <PlayerNameWithPlus
+                            name={m.senderName}
+                            isPlus={msgIsPlus}
+                            plusGlow={msgGlow}
+                            compact
+                          />
+                          <span>:</span>
+                        </span>
+                      )}
+                      <span className="break-words">{m.text}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="flex items-center gap-1.5 py-2 overflow-x-auto">
@@ -891,7 +964,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
               <label className="text-xs font-bold text-[#5A3E32]">
                 اختر شخصيتك الكرتونية ({CHARACTER_AVATARS.length})
               </label>
-              {onOpenAvatarCropper && (
+              {hasPlus && onOpenAvatarCropper && (
                 <button
                   type="button"
                   onClick={onOpenAvatarCropper}
@@ -905,21 +978,33 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             <div className="grid grid-cols-5 gap-2 max-h-48 overflow-y-auto p-1">
               {CHARACTER_AVATARS.map((char) => {
                 const active = avatar === char.id;
+                const locked = Boolean(char.isPlusOnly && !hasPlus);
                 const cleanLabel = char.name.trim();
                 return (
                   <button
                     key={char.id}
                     type="button"
                     onClick={() => {
+                      if (locked) {
+                        SoundFX.playClick();
+                        onOpenPlusModal?.();
+                        return;
+                      }
                       SoundFX.playTileSelect();
                       saveAvatar(char.id);
                     }}
-                    title={cleanLabel ? `${cleanLabel} (${char.tagline})` : char.tagline}
-                    className={`p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
+                    title={
+                      locked
+                        ? `${char.tagline} (خاص بجَمْر بلس 👑)`
+                        : cleanLabel
+                          ? `${cleanLabel} (${char.tagline})`
+                          : char.tagline
+                    }
+                    className={`relative p-1 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer transition-all ${
                       active
                         ? 'bg-amber-50 ring-2 ring-orange-500 shadow-sm scale-105'
                         : 'bg-[#FFF8EE] border border-amber-200 hover:bg-amber-50'
-                    }`}
+                    } ${locked ? 'opacity-65' : ''}`}
                   >
                     <CharacterAvatar
                       avatarId={char.id}
@@ -928,6 +1013,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                       mood={active ? 'excited' : 'idle'}
                       interactive={false}
                     />
+                    {locked && (
+                      <span className="absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-[#1C140A] text-amber-300 flex items-center justify-center">
+                        <Lock className="w-2 h-2" />
+                      </span>
+                    )}
                     {cleanLabel && (
                       <span className="text-[9px] font-black text-[#23140E] truncate max-w-full">
                         {cleanLabel}
@@ -1132,6 +1222,14 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
 
       {showQrScannerModal && (
         <QrScannerModal
+          onScannedTvCode={(tvCode) => {
+            setShowQrScannerModal(false);
+            onPairTvCode?.(tvCode);
+          }}
+          onScannedAdminUsername={(adminUser) => {
+            setShowQrScannerModal(false);
+            onClaimAdminUsername?.(adminUser);
+          }}
           onScannedRoomCode={(scannedCode) => {
             setShowQrScannerModal(false);
             setJoinCode(scannedCode);

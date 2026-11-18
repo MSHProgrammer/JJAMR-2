@@ -12,13 +12,15 @@ import {
   X,
   XCircle,
   ExternalLink,
+  Crown,
 } from 'lucide-react';
-import { AppNotification } from '../types/jamr';
+import { AppNotification, JamrPlusStatus } from '../types/jamr';
 import { CharacterAvatar } from './CharacterAvatar';
 import { SoundFX } from '../utils/soundFx';
 import { getOrCreateSessionPlayerId } from '../network/socketClient';
 import { apiFetchJson } from '../utils/apiClient';
 import { LOCAL_USER_KEY } from '../utils/localFallbackStore';
+import { isPlusActive } from '../utils/plusManager';
 
 export interface FriendSummary {
   username: string;
@@ -37,11 +39,13 @@ interface FriendsAndNotificationsModalProps {
   displayName: string;
   avatar: string;
   avatarBg: string;
+  plusStatus?: JamrPlusStatus;
   activeRoomCode?: string | null;
   notifications: AppNotification[];
   onUsernameSaved: (username: string) => void;
   onNotificationsChange: (notifications: AppNotification[]) => void;
   onJoinRoomDirect: (roomCode: string) => void;
+  onOpenPlusOffer?: (reason?: string) => void;
   onClose: () => void;
 }
 
@@ -51,11 +55,13 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
   displayName,
   avatar,
   avatarBg,
+  plusStatus,
   activeRoomCode,
   notifications,
   onUsernameSaved,
   onNotificationsChange,
   onJoinRoomDirect,
+  onOpenPlusOffer,
   onClose,
 }) => {
   const [tab, setTab] = useState<'friends' | 'notifications'>(initialTab);
@@ -110,8 +116,8 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
   const handleRegisterUsername = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = handleInput.trim().replace(/^@+/, '').toLowerCase();
-    if (!/^[a-z0-9_]{3,20}$/.test(cleaned)) {
-      setHandleError('اكتب يوزر نيم باللغة الإنجليزية (أحرف/أرقام/شرطة سفلية فقط، 3–20 خانة).');
+    if (!/^[a-z0-9_]{1,20}$/.test(cleaned)) {
+      setHandleError('اكتب يوزر نيم باللغة الإنجليزية (أحرف/أرقام/شرطة سفلية فقط، 1–20 خانة).');
       return;
     }
     setRegistering(true);
@@ -119,6 +125,7 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
     setHandleSuccess('');
     setOfflineNotice(false);
 
+    const hasPlus = isPlusActive(plusStatus);
     const res = await apiFetchJson<{ ok?: boolean; error?: string }>(
       '/api/users/register',
       {
@@ -129,6 +136,10 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
           displayName: displayName || 'لاعب جَمْر',
           avatar,
           avatarBg,
+          isPlus: hasPlus,
+          plusGlow: hasPlus ? plusStatus?.glow : undefined,
+          plusTitle: hasPlus ? plusStatus?.profileTitle : undefined,
+          plusFrame: hasPlus ? plusStatus?.avatarFrame : undefined,
         }),
       },
       { unlockStorageOnGesture: true }
@@ -147,6 +158,9 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
       setRegistered(true);
       setHandleSuccess(`تم توثيق اليوزر نيم الفريد الخاص بك: @${cleaned} 🎉`);
       void fetchFriendsState(cleaned);
+      if (cleaned.length >= 1 && cleaned.length <= 10 && !hasPlus && onOpenPlusOffer) {
+        onOpenPlusOffer(`يوزرك القصير المميز @${cleaned} (${cleaned.length} خانات) يؤهلك لعرض جَمْر بلس الحصري (٢ ريال فقط / سنة كاملة)! 👑`);
+      }
       return;
     }
 
@@ -166,6 +180,9 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
     setHandleSuccess(
       `تم حفظ اليوزر نيم @${cleaned} محلياً! لمزامنة الأصدقاء أونلاين افتح المنصة في تبويب مستقل.`
     );
+    if (cleaned.length >= 1 && cleaned.length <= 10 && !hasPlus && onOpenPlusOffer) {
+      onOpenPlusOffer(`يوزرك القصير المميز @${cleaned} يؤهلك لاشتراك جَمْر بلس (٢ ريال فقط / سنة)! 👑`);
+    }
   };
 
   const sendFriendRequest = async (e: React.FormEvent) => {
@@ -410,6 +427,43 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
             )}
             {handleError && <p className="text-xs font-bold text-rose-700">{handleError}</p>}
             {handleSuccess && <p className="text-xs font-bold text-emerald-700">{handleSuccess}</p>}
+
+            {/* Live Jamr Plus Promo triggered immediately whenever username length is 1 to 10 characters */}
+            {((handleInput.trim().length >= 1 && handleInput.trim().length <= 10) ||
+              (username && username.length >= 1 && username.length <= 10)) &&
+              !isPlusActive(plusStatus) && (
+                <div className="rounded-2xl bg-gradient-to-l from-[#1C140A] via-[#120D06] to-[#1D1508] border-2 border-amber-400/75 p-3.5 flex flex-wrap items-center justify-between gap-3 text-amber-50 shadow-lg">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src="/assets/aistudio/________________________1ae37580.png"
+                      alt="جَمْر بلس"
+                      className="w-12 h-12 rounded-xl object-cover border border-amber-400 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                        <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>عرض جَمْر بلس لأصحاب اليوزرات المميزة (١–١٠ أحرف) ✨</span>
+                      </div>
+                      <p className="text-[11px] text-amber-100/80 mt-0.5">
+                        افتح 50 شخصية جديدة، 10 حزم ألوان للموقع بالكامل، صورة من الاستوديو، التوهج، والبث على التلفاز بـ{' '}
+                        <span className="font-black text-amber-300">ريالين فقط لمدة سنة كاملة!</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      SoundFX.playClick();
+                      onOpenPlusOffer?.(
+                        `بما أن يوزرك مكون من ${(handleInput.trim() || username).length} خانات، احصل على اشتراك جَمْر بلس الكامل بريالين فقط لمدة سنة! 👑`
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-l from-amber-400 to-orange-500 text-[#140D05] text-xs font-black shrink-0 cursor-pointer shadow"
+                  >
+                    اشترك الآن (٢ ريال) 👑
+                  </button>
+                </div>
+              )}
           </div>
 
           {tab === 'friends' ? (

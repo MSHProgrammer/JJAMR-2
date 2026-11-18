@@ -47,6 +47,8 @@ import { DetectiveSuspectsAndInterrogation } from './detective/DetectiveSuspects
 import { DetectiveEvidenceAndTimeline } from './detective/DetectiveEvidenceAndTimeline.tsx';
 import { DetectiveCorkboard } from './detective/DetectiveCorkboard.tsx';
 import { DetectiveAccusationAndReveal } from './detective/DetectiveAccusationAndReveal.tsx';
+import { apiFetchJson } from '../../utils/apiClient.ts';
+import { evaluateAccusationSolution } from '../../data/detectiveSolutions.server.ts';
 
 type WorkspaceTab =
   | 'briefing'
@@ -312,36 +314,70 @@ export const SmartDetectiveEngine: React.FC<SmartDetectiveEngineProps> = ({
   ) => {
     setVerifying(true);
     try {
-      const res = await fetch('/api/detective/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const apiRes = await apiFetchJson<{
+        ok?: boolean;
+        error?: string;
+        isCorrect?: boolean;
+        pointsEarned?: number;
+        solution?: DetectiveCaseSolution | null;
+      }>(
+        '/api/detective/verify',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            caseId: currentCase.id,
+            accusedSuspectId: suspectId,
+            reason,
+            cluesFoundCount: currentProgress.savedEvidenceIds.length,
+            usedHintTiers: currentProgress.usedHintTiers,
+            wrongAccusationsBefore: currentProgress.wrongAccusations,
+            revealOnWrong: revealEvenIfWrong,
+          }),
+        },
+        { unlockStorageOnGesture: true }
+      );
+
+      let isCorrect: boolean;
+      let pointsEarned: number;
+      let solution: DetectiveCaseSolution | null;
+
+      if (!apiRes.isHtmlOrStatic && !apiRes.networkError && apiRes.data) {
+        if (!apiRes.ok) {
+          showToast(apiRes.data.error || 'تعذر التحقق من الاتهام');
+          return;
+        }
+        isCorrect = Boolean(apiRes.data.isCorrect);
+        pointsEarned = Number(apiRes.data.pointsEarned || 0);
+        solution = apiRes.data.solution || null;
+      } else {
+        // Local authoritative evaluation fallback if backend is unreachable/static
+        const evalRes = evaluateAccusationSolution({
           caseId: currentCase.id,
           accusedSuspectId: suspectId,
-          reason,
           cluesFoundCount: currentProgress.savedEvidenceIds.length,
           usedHintTiers: currentProgress.usedHintTiers,
           wrongAccusationsBefore: currentProgress.wrongAccusations,
-          revealOnWrong: revealEvenIfWrong,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showToast(data?.error || 'تعذر التحقق من الاتهام');
-        return;
+        });
+        if (!evalRes.validCase) {
+          showToast('ملف القضية غير موجود.');
+          return;
+        }
+        isCorrect = evalRes.isCorrect;
+        pointsEarned = evalRes.pointsEarned;
+        solution = evalRes.isCorrect || revealEvenIfWrong ? evalRes.solution : null;
       }
 
-      if (data.isCorrect) {
+      if (isCorrect && solution) {
         confetti({ particleCount: 90, spread: 75, origin: { y: 0.65 } });
-        setRevealedSolution(data.solution);
+        setRevealedSolution(solution);
         setAttemptFeedback({
           correct: true,
           message: 'أحسنت أيها المحقق! استنتاجك دقيق وكشفت المسؤول الحقيقي!',
-          pointsDelta: data.pointsEarned || 0,
+          pointsDelta: pointsEarned || 0,
         });
         setProfile((prev) => {
           const alreadySolved = prev.solvedCaseIds.includes(currentCase.id);
-          const addedPoints = alreadySolved ? 0 : Math.max(0, data.pointsEarned || 0);
+          const addedPoints = alreadySolved ? 0 : Math.max(0, pointsEarned || 0);
           const existingProg =
             prev.progressByCase[currentCase.id] || createInitialCaseProgress(currentCase);
           const next: DetectiveProfileStats = {
@@ -355,7 +391,7 @@ export const SmartDetectiveEngine: React.FC<SmartDetectiveEngineProps> = ({
               [currentCase.id]: {
                 ...existingProg,
                 status: 'closed',
-                scoreEarned: Math.max(existingProg.scoreEarned, data.pointsEarned || 0),
+                scoreEarned: Math.max(existingProg.scoreEarned, pointsEarned || 0),
                 solvedAt: new Date().toISOString(),
                 lastUpdatedAt: Date.now(),
               },
@@ -368,19 +404,19 @@ export const SmartDetectiveEngine: React.FC<SmartDetectiveEngineProps> = ({
         setAttemptFeedback({
           correct: false,
           message: 'اتهام غير دقيق! المشتبه به الذي اخترته ليس الفاعل الحقيقي.',
-          pointsDelta: data.pointsEarned || -25,
+          pointsDelta: pointsEarned || -25,
         });
         mutateCaseProgress(currentCase.id, (p) => ({
           ...p,
           wrongAccusations: (p.wrongAccusations || 0) + 1,
           status: revealEvenIfWrong ? 'unsolved' : p.status,
         }));
-        if (revealEvenIfWrong && data.solution) {
-          setRevealedSolution(data.solution);
+        if (revealEvenIfWrong && solution) {
+          setRevealedSolution(solution);
         }
       }
     } catch {
-      showToast('تعذر الاتصال بخادم التحقق حالياً');
+      showToast('حدث خطأ غير متوقع أثناء التحقق من الاتهام');
     } finally {
       setVerifying(false);
     }
@@ -815,9 +851,10 @@ export const SmartDetectiveEngine: React.FC<SmartDetectiveEngineProps> = ({
               players={players}
               currentPlayerId={currentPlayerId}
               isHost={isHost}
-              onSubmitOnlineAccusation={(suspectId, reason) =>
-                onOnlineAction?.('detective_submit_accusation', { suspectId, reason })
-              }
+              onSubmitOnlineAccusation={(suspectId, reason) => {
+                onOnlineAction?.('detective_submit_accusation', { suspectId, reason });
+                showToast('تم اعتماد وإرسال اتهامك السري إلى الغرفة ⚖️');
+              }}
               onHostCloseCase={() => onOnlineAction?.('detective_close_case')}
               onHostNextCase={() => onOnlineAction?.('detective_next_case')}
             />

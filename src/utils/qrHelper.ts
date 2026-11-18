@@ -59,6 +59,65 @@ export function extractRoomCodeFromQrPayload(rawPayload: string): string | null 
   return null;
 }
 
+export function extractAdminUsernameFromQrPayload(rawPayload: string): string | null {
+  const trimmed = String(rawPayload || '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsedUrl = new URL(trimmed);
+    const param =
+      parsedUrl.searchParams.get('assign_username') ||
+      parsedUrl.searchParams.get('admin_user') ||
+      parsedUrl.searchParams.get('username');
+    if (param) {
+      const clean = param.trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+      if (clean.length >= 1) return clean;
+    }
+  } catch {
+    // ignore URL parse error
+  }
+  const m = trimmed.match(/(?:assign_username|admin_user|jamr:\/\/user\/)=?([a-zA-Z0-9_]{1,20})/i);
+  if (m?.[1]) return m[1].toLowerCase();
+  if (trimmed.startsWith('@') && /^[a-zA-Z0-9_]{1,20}$/.test(trimmed.slice(1))) {
+    return trimmed.slice(1).toLowerCase();
+  }
+  return null;
+}
+
+export function extractTvCodeFromQrPayload(rawPayload: string): string | null {
+  const trimmed = String(rawPayload || '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsedUrl = new URL(trimmed);
+    const param = parsedUrl.searchParams.get('tv') || parsedUrl.searchParams.get('tvCode');
+    if (param) {
+      const clean = param.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (clean.startsWith('TV') && clean.length >= 5) return clean;
+    }
+  } catch {
+    // ignore
+  }
+  const m = trimmed.match(/[?&](?:tv|tvCode)=(TV[A-Z0-9]{3,8})/i) || trimmed.match(/^(TV[A-Z0-9]{4,8})$/i);
+  return m?.[1] ? m[1].toUpperCase() : null;
+}
+
+export function buildTvPairUrl(tvCode: string): string {
+  const clean = tvCode.trim().toUpperCase();
+  if (typeof window === 'undefined') return `?tv=${clean}`;
+  return `${window.location.origin}/?tv=${encodeURIComponent(clean)}`;
+}
+
+export async function generateLuxuryGoldQrDataUrl(payloadUrl: string, width = 420): Promise<string> {
+  return QRCode.toDataURL(payloadUrl, {
+    width,
+    margin: 2,
+    errorCorrectionLevel: 'H',
+    color: {
+      dark: '#FBBF24',
+      light: '#0C0906',
+    },
+  });
+}
+
 export async function generateRoomQrDataUrl(
   roomCode: string,
   options?: { dark?: string; light?: string; width?: number }

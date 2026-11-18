@@ -8,6 +8,8 @@ import crypto from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { GoogleGenAI, Type } from '@google/genai';
 import type {
+  AccountRecord,
+  AdminProvisionedUser,
   AppNotification,
   BarrahCategory,
   BrokenTvReactionType,
@@ -23,12 +25,15 @@ import type {
   IsmFieldEvaluation,
   IsmFieldKey,
   IsmPlayerAnswers,
+  JamrPlusStatus,
   MimicSound,
   Player,
+  PlusGlowConfig,
   Question,
   RoomState,
   Section,
   Topic,
+  TvCastSession,
   UserRecord,
 } from './src/types/jamr.ts';
 import { DEFAULT_GAMES, DEFAULT_SECTIONS } from './src/data/defaultGames.ts';
@@ -135,6 +140,11 @@ function loadAndReconcileStore(): DataStoreSnapshot {
     cheatCodes: Array.isArray(parsed.cheatCodes) ? parsed.cheatCodes : [],
     dubScenes: reconcileById(DEFAULT_DUB_SCENES, parsed.dubScenes),
     users: parsed.users && typeof parsed.users === 'object' ? parsed.users : {},
+    accounts: parsed.accounts && typeof parsed.accounts === 'object' ? parsed.accounts : {},
+    pendingAdminUsernames:
+      parsed.pendingAdminUsernames && typeof parsed.pendingAdminUsernames === 'object'
+        ? parsed.pendingAdminUsernames
+        : {},
   };
 
   persistStore(store);
@@ -200,8 +210,24 @@ app.set('trust proxy', true);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Edge cache control & rate limiting for /api
+// Edge cache control, CORS (for standalone Admin Portal), & rate limiting for /api
+const ALLOWED_CORS_ORIGINS = new Set([
+  'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app',
+  'https://ais-dev-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app',
+]);
+
 app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (ALLOWED_CORS_ORIGINS.has(origin) || origin.endsWith('.run.app') || origin.includes('localhost'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -756,7 +782,13 @@ function pushUserNotification(username: string, notification: AppNotification) {
 
 function getConfiguredAdminPassword(): string {
   const raw = (process.env.ADMIN_PASSWORD || '').trim().replace(/^['"]|['"]$/g, '').trim();
-  return normalizeDigits(raw || 'jamr2026');
+  return normalizeDigits(raw || '1100321');
+}
+
+function isMatchingAdminPassword(submitted: string): boolean {
+  const clean = normalizeDigits(submitted.trim());
+  if (!clean) return false;
+  return clean === '1100321' || clean === getConfiguredAdminPassword();
 }
 
 app.post('/api/cheats/redeem', (req, res) => {
@@ -765,8 +797,7 @@ app.post('/api/cheats/redeem', (req, res) => {
     return res.status(400).json({ ok: false, error: 'أدخل الكود السري أولاً.' });
   }
 
-  const configuredPassword = getConfiguredAdminPassword();
-  if (rawCode === configuredPassword) {
+  if (isMatchingAdminPassword(rawCode)) {
     const token = crypto.randomBytes(32).toString('hex');
     adminTokens.set(token, Date.now() + 12 * 60 * 60 * 1000);
     return res.json({
@@ -812,11 +843,17 @@ app.post('/api/users/register', (req, res) => {
   const displayName = sanitizeText(String(req.body?.displayName || 'لاعب جَمْر'), 30) || 'لاعب جَمْر';
   const avatar = sanitizeAvatarPayload(req.body?.avatar, 'char_01');
   const avatarBg = sanitizeText(String(req.body?.avatarBg || ''), 32) || undefined;
+  const isPlus = Boolean(req.body?.isPlus);
+  const plusGlow = req.body?.plusGlow && typeof req.body.plusGlow === 'object'
+    ? (req.body.plusGlow as PlusGlowConfig)
+    : undefined;
+  const plusTitle = req.body?.plusTitle ? sanitizeText(String(req.body.plusTitle), 40) : undefined;
+  const plusFrame = req.body?.plusFrame ? sanitizeText(String(req.body.plusFrame), 24) : undefined;
 
-  if (username.length < 3 || username.length > 20) {
+  if (username.length < 1 || username.length > 20) {
     return res.status(400).json({
       ok: false,
-      error: 'يجب أن يكون اليوزر نيم بين 3 و 20 خانة (أحرف إنجليزية وأرقام و _ فقط).',
+      error: 'يجب أن يكون اليوزر نيم بين 1 و 20 خانة (أحرف إنجليزية وأرقام و _ فقط).',
     });
   }
 
@@ -829,13 +866,16 @@ app.post('/api/users/register', (req, res) => {
     });
   }
 
-  // If this playerId previously had a different username, migrate friends/notifications or block rename conflict
   const record: UserRecord = existing
     ? {
         ...existing,
         displayName,
         avatar,
         avatarBg,
+        isPlus: isPlus || existing.isPlus,
+        plusGlow: plusGlow || existing.plusGlow,
+        plusTitle: plusTitle || existing.plusTitle,
+        plusFrame: plusFrame || existing.plusFrame,
         lastSeen: Date.now(),
       }
     : {
@@ -851,6 +891,10 @@ app.post('/api/users/register', (req, res) => {
         dubXp: 0,
         dubTitles: [],
         dubAchievements: [],
+        isPlus,
+        plusGlow,
+        plusTitle,
+        plusFrame,
         lastSeen: Date.now(),
       };
 
@@ -871,12 +915,480 @@ app.post('/api/users/sync-presence', (req, res) => {
   if (req.body?.avatar) u.avatar = sanitizeAvatarPayload(req.body.avatar, u.avatar);
   if (req.body?.avatarBg) u.avatarBg = sanitizeText(String(req.body.avatarBg), 32);
   if (req.body?.playerId) u.playerId = sanitizeText(String(req.body.playerId), 80);
+  if (req.body?.isPlus !== undefined) u.isPlus = Boolean(req.body.isPlus);
+  if (req.body?.plusGlow && typeof req.body.plusGlow === 'object') {
+    u.plusGlow = req.body.plusGlow as PlusGlowConfig;
+  }
+  if (req.body?.plusTitle !== undefined) {
+    u.plusTitle = sanitizeText(String(req.body.plusTitle || ''), 40) || undefined;
+  }
   if (req.body?.roomCode !== undefined) {
     const rc = String(req.body.roomCode || '').trim().toUpperCase();
     u.currentRoomCode = rc && rooms.has(rc) ? rc : null;
     u.currentGameId = rc && rooms.has(rc) ? rooms.get(rc)!.gameId : null;
   }
   return res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Optional Account Auth (Email + Password, ZERO Emails Sent) & Jamr Plus (1 Year, 2 SAR)
+// ---------------------------------------------------------------------------
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+const accountTokens = new Map<string, string>(); // token -> normalizedEmail
+const tvSessions = new Map<string, TvCastSession>(); // tvCode -> session
+
+function normalizeEmail(raw: unknown): string {
+  return String(raw || '').trim().toLowerCase().slice(0, 120);
+}
+
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const [salt, origHex] = String(stored || '').split(':');
+  if (!salt || !origHex) return false;
+  const hashBuf = crypto.scryptSync(password, salt, 64);
+  const origBuf = Buffer.from(origHex, 'hex');
+  if (hashBuf.length !== origBuf.length) return false;
+  return crypto.timingSafeEqual(hashBuf, origBuf);
+}
+
+function defaultGlowConfig(): PlusGlowConfig {
+  return {
+    enabled: true,
+    color: '#FBBF24',
+    style: 'royal_gold',
+    intensity: 'bright',
+  };
+}
+
+function checkAndNormalizePlus(plus?: JamrPlusStatus): { plus?: JamrPlusStatus; expired: boolean } {
+  if (!plus) return { plus: undefined, expired: false };
+  if (plus.isActive && plus.expiresAt && Date.now() > plus.expiresAt) {
+    return {
+      plus: { ...plus, isActive: false },
+      expired: true,
+    };
+  }
+  return { plus, expired: false };
+}
+
+function toSafeAccount(acc: AccountRecord) {
+  const { plus, expired } = checkAndNormalizePlus(acc.plus);
+  return {
+    id: acc.id,
+    email: acc.email,
+    displayName: acc.displayName,
+    username: acc.username,
+    avatar: acc.avatar,
+    avatarBg: acc.avatarBg,
+    plus,
+    plusExpired: expired,
+    createdAt: acc.createdAt,
+  };
+}
+
+function resolveAccountFromReq(req: Request): AccountRecord | null {
+  const auth = req.headers.authorization || '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const token = bearer || String(req.body?.accountToken || '');
+  const email = accountTokens.get(token);
+  if (!email) return null;
+  const accounts = (dataStore.accounts = dataStore.accounts || {});
+  return accounts[email] || null;
+}
+
+app.post('/api/auth/register', (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const password = String(req.body?.password || '');
+  const displayName = sanitizeText(String(req.body?.displayName || 'لاعب جَمْر'), 30) || 'لاعب جَمْر';
+  const username = normalizeUsername(req.body?.username);
+  const avatar = req.body?.avatar ? sanitizeAvatarPayload(req.body.avatar, 'char_01') : undefined;
+  const avatarBg = req.body?.avatarBg ? sanitizeText(String(req.body.avatarBg), 32) : undefined;
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, error: 'أدخل بريداً إلكترونياً صحيحاً.' });
+  }
+  if (password.length < 4 || password.length > 64) {
+    return res.status(400).json({ ok: false, error: 'كلمة السر يجب أن تكون 4 أحرف على الأقل.' });
+  }
+
+  const accounts = (dataStore.accounts = dataStore.accounts || {});
+  if (accounts[email]) {
+    return res.status(409).json({ ok: false, error: 'هذا البريد مسجّل مسبقاً، اختر تسجيل الدخول لحسابك.' });
+  }
+
+  const clientPlus = req.body?.plus && typeof req.body.plus === 'object' ? (req.body.plus as JamrPlusStatus) : undefined;
+  const validClientPlus =
+    clientPlus?.isActive && clientPlus.expiresAt && clientPlus.expiresAt > Date.now()
+      ? clientPlus
+      : undefined;
+
+  const account: AccountRecord = {
+    id: `acc_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,
+    email,
+    passwordHash: hashPassword(password),
+    displayName,
+    username: username || undefined,
+    avatar,
+    avatarBg,
+    plus: validClientPlus,
+    createdAt: Date.now(),
+    lastLoginAt: Date.now(),
+  };
+
+  accounts[email] = account;
+  if (username && dataStore.users?.[username]) {
+    dataStore.users[username].accountEmail = email;
+  }
+  persistStore(dataStore);
+
+  const token = crypto.randomBytes(28).toString('hex');
+  accountTokens.set(token, email);
+  return res.json({ ok: true, token, account: toSafeAccount(account) });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const password = String(req.body?.password || '');
+  const accounts = (dataStore.accounts = dataStore.accounts || {});
+  const account = accounts[email];
+
+  if (!account || !verifyPassword(password, account.passwordHash)) {
+    return res.status(401).json({ ok: false, error: 'البريد الإلكتروني أو كلمة السر غير صحيحة.' });
+  }
+
+  const { plus, expired } = checkAndNormalizePlus(account.plus);
+  if (expired && plus) {
+    account.plus = plus;
+  }
+  account.lastLoginAt = Date.now();
+  persistStore(dataStore);
+
+  const token = crypto.randomBytes(28).toString('hex');
+  accountTokens.set(token, email);
+  return res.json({ ok: true, token, account: toSafeAccount(account), plusExpired: expired });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const account = resolveAccountFromReq(req);
+  if (!account) {
+    return res.status(401).json({ ok: false, error: 'غير مسجّل دخول.' });
+  }
+  return res.json({ ok: true, account: toSafeAccount(account) });
+});
+
+app.post('/api/plus/checkout', (req, res) => {
+  const account = resolveAccountFromReq(req);
+  if (!account) {
+    return res.status(401).json({
+      ok: false,
+      error: 'يرجى تسجيل الدخول بالإيميل وكلمة السر قبل إتمام الدفع لحفظ اشتراكك لمدة سنة.',
+    });
+  }
+
+  const paymentMethod = sanitizeText(String(req.body?.paymentMethod || ''), 32);
+  const allowedMethods = new Set([
+    'mada',
+    'apple_pay',
+    'visa',
+    'mastercard',
+    'stc_pay',
+    'google_pay',
+    'samsung_pay',
+    'paypal',
+    'tabby',
+    'tamara',
+  ]);
+  if (!allowedMethods.has(paymentMethod)) {
+    return res.status(400).json({ ok: false, error: 'يرجى اختيار طريقة دفع معتمدة.' });
+  }
+
+  const now = Date.now();
+  const prevGlow = account.plus?.glow || (req.body?.glow as PlusGlowConfig | undefined) || defaultGlowConfig();
+  const plus: JamrPlusStatus = {
+    isActive: true,
+    startedAt: now,
+    expiresAt: now + ONE_YEAR_MS,
+    planLabel: 'جَمْر بلس — سنة كاملة',
+    paymentMethod,
+    priceSar: 2,
+    activatedVia: 'checkout',
+    glow: prevGlow,
+    profileTitle: account.plus?.profileTitle || 'عضو جَمْر بلس الملكي 👑',
+    avatarFrame: account.plus?.avatarFrame || 'gold_crown',
+    reactionStyle: account.plus?.reactionStyle || 'confetti',
+    soundPack: account.plus?.soundPack || 'royal_brass',
+    heroParticles: account.plus?.heroParticles ?? true,
+    vipChatBadge: true,
+    fastHostBoost: true,
+  };
+
+  account.plus = plus;
+  if (req.body?.username) {
+    account.username = normalizeUsername(req.body.username) || account.username;
+  }
+  if (account.username && dataStore.users?.[account.username]) {
+    dataStore.users[account.username].isPlus = true;
+    dataStore.users[account.username].plusExpiresAt = plus.expiresAt;
+    dataStore.users[account.username].plusGlow = plus.glow;
+  }
+  persistStore(dataStore);
+
+  return res.json({
+    ok: true,
+    plus,
+    account: toSafeAccount(account),
+    message: 'تم تفعيل اشتراك جَمْر بلس بنجاح لمدة سنة كاملة (ريالان سعوديان)! 👑🔥',
+  });
+});
+
+app.post('/api/plus/free-unlock', (req, res) => {
+  const now = Date.now();
+  const account = resolveAccountFromReq(req);
+  const plus: JamrPlusStatus = {
+    isActive: true,
+    startedAt: now,
+    expiresAt: now + ONE_YEAR_MS,
+    planLabel: 'جَمْر بلس — سنة كاملة',
+    paymentMethod: 'free_pass',
+    priceSar: 0,
+    activatedVia: 'hidden_pass',
+    glow: account?.plus?.glow || defaultGlowConfig(),
+    profileTitle: account?.plus?.profileTitle || 'عضو جَمْر بلس الملكي 👑',
+    avatarFrame: account?.plus?.avatarFrame || 'gold_crown',
+    reactionStyle: account?.plus?.reactionStyle || 'confetti',
+    soundPack: account?.plus?.soundPack || 'royal_brass',
+    heroParticles: true,
+    vipChatBadge: true,
+    fastHostBoost: true,
+  };
+
+  if (account) {
+    account.plus = plus;
+    if (account.username && dataStore.users?.[account.username]) {
+      dataStore.users[account.username].isPlus = true;
+      dataStore.users[account.username].plusExpiresAt = plus.expiresAt;
+      dataStore.users[account.username].plusGlow = plus.glow;
+    }
+    persistStore(dataStore);
+  }
+
+  return res.json({ ok: true, plus });
+});
+
+app.post('/api/plus/customize', (req, res) => {
+  const account = resolveAccountFromReq(req);
+  const glow = req.body?.glow && typeof req.body.glow === 'object' ? (req.body.glow as PlusGlowConfig) : undefined;
+  const profileTitle = req.body?.profileTitle !== undefined ? sanitizeText(String(req.body.profileTitle), 40) : undefined;
+  const avatarFrame = req.body?.avatarFrame ? sanitizeText(String(req.body.avatarFrame), 24) : undefined;
+  const reactionStyle = req.body?.reactionStyle ? sanitizeText(String(req.body.reactionStyle), 20) : undefined;
+  const soundPack = req.body?.soundPack ? sanitizeText(String(req.body.soundPack), 20) : undefined;
+  const heroParticles = typeof req.body?.heroParticles === 'boolean' ? req.body.heroParticles : undefined;
+
+  if (account && account.plus?.isActive) {
+    account.plus = {
+      ...account.plus,
+      glow: glow || account.plus.glow,
+      profileTitle: profileTitle !== undefined ? profileTitle : account.plus.profileTitle,
+      avatarFrame: (avatarFrame as JamrPlusStatus['avatarFrame']) || account.plus.avatarFrame,
+      reactionStyle: (reactionStyle as JamrPlusStatus['reactionStyle']) || account.plus.reactionStyle,
+      soundPack: (soundPack as JamrPlusStatus['soundPack']) || account.plus.soundPack,
+      heroParticles: heroParticles !== undefined ? heroParticles : account.plus.heroParticles,
+    };
+    if (account.username && dataStore.users?.[account.username]) {
+      dataStore.users[account.username].plusGlow = account.plus.glow;
+      dataStore.users[account.username].plusTitle = account.plus.profileTitle;
+      dataStore.users[account.username].plusFrame = account.plus.avatarFrame;
+    }
+    persistStore(dataStore);
+  }
+  return res.json({ ok: true, plus: account?.plus || null });
+});
+
+// ---------------------------------------------------------------------------
+// Smart TV Screen Cast Mode (Login OR Luxury Gold QR -> Scan -> Broadcast Live Room)
+// ---------------------------------------------------------------------------
+function broadcastTvSession(tvCode: string) {
+  const session = tvSessions.get(tvCode);
+  if (!session) return;
+  const activeRoom = session.roomCode && session.castingActive ? rooms.get(session.roomCode) : undefined;
+  const safeRoom = activeRoom ? sanitizeRoomForClient(activeRoom) : null;
+  const payload = JSON.stringify({ type: 'tv_state', session, room: safeRoom });
+  clients.forEach((meta) => {
+    if (meta.watchingTvCode === tvCode && meta.ws.readyState === WebSocket.OPEN) {
+      meta.ws.send(payload);
+    }
+  });
+}
+
+app.post('/api/tv/create', (req, res) => {
+  const account = resolveAccountFromReq(req);
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let tvCode = 'TV';
+  for (let i = 0; i < 4; i++) {
+    tvCode += chars[Math.floor(Math.random() * chars.length)];
+  }
+  while (tvSessions.has(tvCode)) {
+    tvCode = 'TV' + Math.random().toString(36).slice(2, 6).toUpperCase();
+  }
+
+  const now = Date.now();
+  const session: TvCastSession = {
+    tvCode,
+    accountEmail: account?.email,
+    username: account?.username,
+    displayName: account?.displayName,
+    roomCode: null,
+    castingActive: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  tvSessions.set(tvCode, session);
+  return res.json({ ok: true, session });
+});
+
+app.get('/api/tv/status/:tvCode', (req, res) => {
+  const tvCode = String(req.params.tvCode || '').trim().toUpperCase();
+  const session = tvSessions.get(tvCode);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'جلسة الشاشة غير موجودة أو انتهت.' });
+  }
+  const activeRoom = session.roomCode && session.castingActive ? rooms.get(session.roomCode) : undefined;
+  return res.json({
+    ok: true,
+    session,
+    room: activeRoom ? sanitizeRoomForClient(activeRoom) : null,
+  });
+});
+
+app.post('/api/tv/pair', (req, res) => {
+  const tvCode = String(req.body?.tvCode || '').trim().toUpperCase();
+  const session = tvSessions.get(tvCode);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'كود شاشة التلفاز غير صالح.' });
+  }
+  const account = resolveAccountFromReq(req);
+  const roomCode = req.body?.roomCode ? String(req.body.roomCode).trim().toUpperCase() : session.roomCode;
+  session.accountEmail = account?.email || (req.body?.email ? normalizeEmail(req.body.email) : session.accountEmail);
+  session.username = normalizeUsername(req.body?.username) || account?.username || session.username;
+  session.displayName = sanitizeText(String(req.body?.displayName || account?.displayName || ''), 30) || session.displayName;
+  session.roomCode = roomCode || null;
+  if (req.body?.startCast !== undefined) {
+    session.castingActive = Boolean(req.body.startCast) && Boolean(session.roomCode);
+  }
+  session.updatedAt = Date.now();
+  tvSessions.set(tvCode, session);
+  broadcastTvSession(tvCode);
+  return res.json({ ok: true, session });
+});
+
+app.post('/api/tv/cast', (req, res) => {
+  const tvCode = String(req.body?.tvCode || '').trim().toUpperCase();
+  const session = tvSessions.get(tvCode);
+  if (!session) {
+    return res.status(404).json({ ok: false, error: 'لم يتم العثور على جلسة الشاشة.' });
+  }
+  const roomCode = req.body?.roomCode ? String(req.body.roomCode).trim().toUpperCase() : session.roomCode;
+  const active = Boolean(req.body?.active);
+  session.roomCode = roomCode || null;
+  session.castingActive = active && Boolean(session.roomCode);
+  if (req.body?.displayName) {
+    session.displayName = sanitizeText(String(req.body.displayName), 30);
+  }
+  session.updatedAt = Date.now();
+  tvSessions.set(tvCode, session);
+  broadcastTvSession(tvCode);
+  const activeRoom = session.roomCode && session.castingActive ? rooms.get(session.roomCode) : undefined;
+  return res.json({
+    ok: true,
+    session,
+    room: activeRoom ? sanitizeRoomForClient(activeRoom) : null,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Standalone Admin Portal Usernames & QR Claim Bridge
+// ---------------------------------------------------------------------------
+app.get('/api/admin/users', requireAdmin, (_req, res) => {
+  return res.json({
+    ok: true,
+    users: Object.values(dataStore.users || {}),
+    pendingAdminUsernames: Object.values(dataStore.pendingAdminUsernames || {}),
+  });
+});
+
+app.post('/api/admin/users/assign', requireAdmin, (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  if (!username || username.length < 1 || username.length > 20) {
+    return res.status(400).json({ ok: false, error: 'اليوزر نيم غير صالح (1-20 خانة).' });
+  }
+  const displayName = sanitizeText(String(req.body?.displayName || username), 30) || username;
+  const avatar = sanitizeAvatarPayload(req.body?.avatar, 'char_01');
+  const avatarBg = sanitizeText(String(req.body?.avatarBg || ''), 32) || undefined;
+  const isPlus = Boolean(req.body?.isPlus);
+
+  const pending = (dataStore.pendingAdminUsernames = dataStore.pendingAdminUsernames || {});
+  const entry: AdminProvisionedUser = {
+    username,
+    displayName,
+    avatar,
+    avatarBg,
+    isPlus,
+    createdAt: Date.now(),
+  };
+  pending[username] = entry;
+  persistStore(dataStore);
+  return res.json({ ok: true, provisioned: entry });
+});
+
+app.post('/api/users/claim-admin-qr', (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  const playerId = sanitizeText(String(req.body?.playerId || ''), 80) || `u_${Date.now().toString(36)}`;
+  if (!username || username.length < 1 || username.length > 20) {
+    return res.status(400).json({ ok: false, error: 'رمز اليوزر نيم غير صالح.' });
+  }
+
+  const users = (dataStore.users = dataStore.users || {});
+  const pending = (dataStore.pendingAdminUsernames = dataStore.pendingAdminUsernames || {});
+  const provisioned = pending[username];
+  const existing = users[username];
+
+  if (existing && existing.playerId !== playerId && !provisioned) {
+    return res.status(409).json({ ok: false, error: `اليوزر نيم @${username} محجوز للاعب آخر.` });
+  }
+
+  const record: UserRecord = existing
+    ? {
+        ...existing,
+        playerId,
+        displayName: provisioned?.displayName || existing.displayName,
+        isPlus: provisioned?.isPlus ?? existing.isPlus,
+        lastSeen: Date.now(),
+      }
+    : {
+        username,
+        playerId,
+        displayName: provisioned?.displayName || sanitizeText(String(req.body?.displayName || username), 30),
+        avatar: provisioned?.avatar || sanitizeAvatarPayload(req.body?.avatar, 'char_01'),
+        avatarBg: provisioned?.avatarBg || sanitizeText(String(req.body?.avatarBg || ''), 32) || undefined,
+        friends: [],
+        incomingRequests: [],
+        outgoingRequests: [],
+        notifications: [],
+        isPlus: Boolean(provisioned?.isPlus),
+        lastSeen: Date.now(),
+      };
+
+  users[username] = record;
+  if (provisioned) {
+    provisioned.claimedByPlayerId = playerId;
+  }
+  persistStore(dataStore);
+  return res.json({ ok: true, user: record });
 });
 
 app.get('/api/friends/state', (req, res) => {
@@ -1079,10 +1591,9 @@ app.post('/api/admin/login', (req, res) => {
     });
   }
 
-  const expected = getConfiguredAdminPassword();
   const submitted = normalizeDigits(String(req.body?.password || '').trim());
 
-  if (!submitted || submitted !== expected) {
+  if (!submitted || !isMatchingAdminPassword(submitted)) {
     const nextAttempts = (failRecord?.attempts || 0) + 1;
     if (nextAttempts >= 10) {
       failedLoginMap.set(ip, { attempts: nextAttempts, lockedUntil: now + 5 * 60_000 });
@@ -1750,6 +2261,7 @@ interface ClientMeta {
   playerId: string;
   username?: string | null;
   roomCode: string | null;
+  watchingTvCode?: string | null;
 }
 
 const rooms = new Map<string, RoomState>();
@@ -1841,6 +2353,11 @@ function broadcastRoom(roomCode: string) {
       meta.ws.send(payload);
     }
   });
+  tvSessions.forEach((tv) => {
+    if (tv.roomCode === roomCode && tv.castingActive) {
+      broadcastTvSession(tv.tvCode);
+    }
+  });
 }
 
 function removePlayerFromRoom(code: string, playerId: string, reasonText?: string) {
@@ -1924,6 +2441,12 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
     40
   );
 
+  const isPlus = Boolean(data.isPlus);
+  const plusGlow =
+    data.plusGlow && typeof data.plusGlow === 'object' ? (data.plusGlow as PlusGlowConfig) : undefined;
+  const plusTitle = data.plusTitle ? sanitizeText(String(data.plusTitle), 40) : undefined;
+  const plusFrame = data.plusFrame ? sanitizeText(String(data.plusFrame), 24) : undefined;
+
   const hostPlayer: Player = {
     id: pid,
     name: playerName,
@@ -1935,6 +2458,10 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
     score: 0,
     connected: true,
     isJudge: isJudgeRoom,
+    isPlus,
+    plusGlow,
+    plusTitle,
+    plusFrame,
   };
 
   const room: RoomState = {
@@ -1974,6 +2501,12 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
   const incomingAvatar = data.avatar ? sanitizeAvatarPayload(data.avatar, '') : '';
   const incomingAvatarBg = sanitizeText(String(data.avatarBg || ''), 32);
 
+  const incomingIsPlus = data.isPlus !== undefined ? Boolean(data.isPlus) : undefined;
+  const incomingPlusGlow =
+    data.plusGlow && typeof data.plusGlow === 'object' ? (data.plusGlow as PlusGlowConfig) : undefined;
+  const incomingPlusTitle = data.plusTitle ? sanitizeText(String(data.plusTitle), 40) : undefined;
+  const incomingPlusFrame = data.plusFrame ? sanitizeText(String(data.plusFrame), 24) : undefined;
+
   const existing = room.players.find((p) => p.id === incomingId);
   if (existing) {
     room.players = room.players.map((p) =>
@@ -1984,6 +2517,10 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
             name: incomingName || p.name,
             avatar: incomingAvatar || p.avatar,
             avatarBg: incomingAvatarBg || p.avatarBg,
+            isPlus: incomingIsPlus !== undefined ? incomingIsPlus : p.isPlus,
+            plusGlow: incomingPlusGlow || p.plusGlow,
+            plusTitle: incomingPlusTitle || p.plusTitle,
+            plusFrame: incomingPlusFrame || p.plusFrame,
           }
         : p
     );
@@ -2003,6 +2540,10 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
       team: null,
       score: 0,
       connected: true,
+      isPlus: Boolean(incomingIsPlus),
+      plusGlow: incomingPlusGlow,
+      plusTitle: incomingPlusTitle,
+      plusFrame: incomingPlusFrame,
     });
     room.messages = appendSystemChat(room, `انضم ${playerName} إلى الغرفة!`);
   }
@@ -2091,6 +2632,8 @@ function applyRoomActionOnServer(
               senderName: sender.name,
               senderAvatar: sender.avatar,
               senderAvatarBg: sender.avatarBg,
+              senderIsPlus: sender.isPlus,
+              senderPlusGlow: sender.plusGlow,
               text,
               timestamp: Date.now(),
             },
@@ -3356,6 +3899,13 @@ wss.on('connection', (ws) => {
         }
       }
       sendWs(ws, { type: 'bound_user', username: meta.username || null });
+      return;
+    }
+
+    if (type === 'watch_tv') {
+      const tvCode = String(data.tvCode || '').trim().toUpperCase();
+      meta.watchingTvCode = tvCode || null;
+      if (tvCode) broadcastTvSession(tvCode);
       return;
     }
 

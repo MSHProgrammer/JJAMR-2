@@ -18,9 +18,9 @@
     font-family: 'Alexandria', 'Readex Pro', system-ui, sans-serif;
     background-color: var(--jamr-bg);
     background-image:
-      radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--jamr-accent) 16%, transparent), transparent 34%),
-      radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--jamr-primary) 13%, transparent), transparent 32%),
-      radial-gradient(circle at 50% 92%, rgba(239, 68, 68, 0.07), transparent 40%);
+      radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--jamr-accent) 18%, transparent), transparent 34%),
+      radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--jamr-primary) 14%, transparent), transparent 32%),
+      radial-gradient(circle at 50% 92%, color-mix(in srgb, var(--jamr-primary) 9%, transparent), transparent 40%);
     color: var(--jamr-text);
     transition: background-color 0.25s ease, color 0.25s ease;
   }
@@ -28,6 +28,67 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Full-site Custom Theme Overrides for Jamr Plus subscribers (can completely transform the entire palette) */
+html[data-jamr-themed="true"] body,
+html[data-jamr-themed="true"] #root > div {
+  background-color: var(--jamr-bg) !important;
+  color: var(--jamr-text) !important;
+}
+
+html[data-jamr-themed="true"] header,
+html[data-jamr-themed="true"] footer {
+  background-color: color-mix(in srgb, var(--jamr-surface) 92%, var(--jamr-bg)) !important;
+  border-color: color-mix(in srgb, var(--jamr-primary) 30%, transparent) !important;
+  color: var(--jamr-text) !important;
+}
+
+html[data-jamr-themed="true"] .bg-white,
+html[data-jamr-themed="true"] .bg-\[\#FFF8EE\],
+html[data-jamr-themed="true"] .bg-\[\#FFFDF9\],
+html[data-jamr-themed="true"] .bg-\[\#FFFBF5\],
+html[data-jamr-themed="true"] .bg-\[\#FFF7ED\],
+html[data-jamr-themed="true"] .bg-\[\#FFF4E0\],
+html[data-jamr-themed="true"] .bg-\[\#FFF8EC\]\/80,
+html[data-jamr-themed="true"] .bg-\[\#FFFBF5\]\/92 {
+  background-color: var(--jamr-surface) !important;
+  color: var(--jamr-text) !important;
+}
+
+html[data-jamr-themed="true"] .text-\[\#23140E\],
+html[data-jamr-themed="true"] .text-\[\#5A3E32\],
+html[data-jamr-themed="true"] .text-\[\#6B4E40\],
+html[data-jamr-themed="true"] .text-\[\#7C5D4F\] {
+  color: var(--jamr-text) !important;
+}
+
+html[data-jamr-themed="true"] .text-orange-600,
+html[data-jamr-themed="true"] .text-orange-700,
+html[data-jamr-themed="true"] .text-orange-800,
+html[data-jamr-themed="true"] .text-orange-500 {
+  color: var(--jamr-primary) !important;
+}
+
+html[data-jamr-themed="true"] .border-amber-200,
+html[data-jamr-themed="true"] .border-amber-300,
+html[data-jamr-themed="true"] .border-orange-200,
+html[data-jamr-themed="true"] .border-orange-300 {
+  border-color: color-mix(in srgb, var(--jamr-primary) 38%, transparent) !important;
+}
+
+html[data-jamr-themed="true"] .from-orange-500,
+html[data-jamr-themed="true"] .from-amber-500,
+html[data-jamr-themed="true"] .bg-orange-500 {
+  --tw-gradient-from: var(--jamr-primary) !important;
+  --tw-gradient-to: var(--jamr-accent) !important;
+  background-color: var(--jamr-primary) !important;
+}
+
+html[data-jamr-themed="true"] .to-amber-500,
+html[data-jamr-themed="true"] .to-orange-500,
+html[data-jamr-themed="true"] .to-red-500 {
+  --tw-gradient-to: var(--jamr-accent) !important;
 }
 
 .font-readex {
@@ -43,8 +104,22 @@
   animation: floatSlow 4s ease-in-out infinite;
 }
 
+@keyframes plusGlowPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px var(--plus-glow-color, #FBBF24));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px var(--plus-glow-color, #F59E0B));
+  }
+}
+
+.plus-glow-animate {
+  animation: plusGlowPulse 2.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-float-slow,
+  .plus-glow-animate,
   .animate-bounce,
   .animate-pulse,
   .animate-spin {
@@ -52,21 +127,21 @@
   }
 }
 
-/* Custom scrollbar for sunlit warm JAMR theme */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #FFF3E0;
+  background: color-mix(in srgb, var(--jamr-bg) 80%, #FFE0B2);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(249, 115, 22, 0.45);
+  background: color-mix(in srgb, var(--jamr-primary) 55%, transparent);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(234, 88, 12, 0.72);
+  background: var(--jamr-primary);
 }

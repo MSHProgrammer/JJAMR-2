@@ -118,6 +118,55 @@ export interface BugReport {
   createdAt: string;
 }
 
+export interface PlusGlowConfig {
+  enabled: boolean;
+  color: string;
+  style: 'royal_gold' | 'ember_fire' | 'emerald_neon' | 'cosmic_purple' | 'arctic_blue' | 'crimson_ruby';
+  intensity: 'soft' | 'bright' | 'legendary';
+}
+
+export interface JamrPlusStatus {
+  isActive: boolean;
+  startedAt?: number;
+  expiresAt?: number;
+  planLabel?: string;
+  paymentMethod?: string;
+  priceSar?: number;
+  activatedVia?: 'checkout' | 'hidden_pass' | 'admin';
+  glow: PlusGlowConfig;
+  profileTitle?: string;
+  avatarFrame?: 'none' | 'gold_crown' | 'flame_ring' | 'diamond_halo' | 'obsidian_royal';
+  reactionStyle?: 'confetti' | 'fireworks' | 'stars';
+  soundPack?: 'classic' | 'royal_brass';
+  heroParticles?: boolean;
+  vipChatBadge?: boolean;
+  fastHostBoost?: boolean;
+}
+
+export interface AccountRecord {
+  id: string;
+  email: string;
+  passwordHash: string;
+  displayName: string;
+  username?: string;
+  avatar?: string;
+  avatarBg?: string;
+  plus?: JamrPlusStatus;
+  createdAt: number;
+  lastLoginAt: number;
+}
+
+export interface TvCastSession {
+  tvCode: string;
+  accountEmail?: string;
+  username?: string;
+  displayName?: string;
+  roomCode: string | null;
+  castingActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -129,6 +178,10 @@ export interface Player {
   score: number;
   connected: boolean;
   isJudge?: boolean;
+  isPlus?: boolean;
+  plusGlow?: PlusGlowConfig;
+  plusTitle?: string;
+  plusFrame?: string;
 }
 
 export interface ChatMessage {
@@ -137,6 +190,9 @@ export interface ChatMessage {
   senderName: string;
   senderAvatar: string;
   senderAvatarBg?: string;
+  senderIsPlus?: boolean;
+  senderPlusGlow?: PlusGlowConfig;
+  senderGlow?: PlusGlowConfig;
   text: string;
   timestamp: number;
   isSystem?: boolean;
@@ -356,7 +412,7 @@ export interface CheatCodeConfig {
 
 export interface AppNotification {
   id: string;
-  type: 'friend_request' | 'room_invite' | 'room_chat';
+  type: 'friend_request' | 'room_invite' | 'room_chat' | 'system';
   title: string;
   body: string;
   fromUsername?: string;
@@ -383,6 +439,12 @@ export interface UserRecord {
   dubXp?: number;
   dubTitles?: string[];
   dubAchievements?: string[];
+  isPlus?: boolean;
+  plusExpiresAt?: number;
+  plusGlow?: PlusGlowConfig;
+  plusTitle?: string;
+  plusFrame?: string;
+  accountEmail?: string;
   lastSeen: number;
   currentRoomCode?: string | null;
   currentGameId?: string | null;
@@ -408,6 +470,16 @@ export interface RoomState {
   dubMic?: DubMicState;
 }
 
+export interface AdminProvisionedUser {
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  avatarBg?: string;
+  isPlus?: boolean;
+  createdAt: number;
+  claimedByPlayerId?: string;
+}
+
 export interface DataStoreSnapshot {
   sections: Section[];
   topics: Topic[];
@@ -419,4 +491,6 @@ export interface DataStoreSnapshot {
   cheatCodes?: CheatCodeConfig[];
   dubScenes?: DubMicScene[];
   users?: Record<string, UserRecord>;
+  accounts?: Record<string, AccountRecord>;
+  pendingAdminUsernames?: Record<string, AdminProvisionedUser>;
 }

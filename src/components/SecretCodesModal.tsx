@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
-import { KeyRound, Sparkles, X, CheckCircle2, Trash2, ExternalLink, Shield } from 'lucide-react';
+import { KeyRound, Sparkles, X, CheckCircle2, Trash2, ExternalLink } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
 import { apiFetchJson } from '../utils/apiClient';
 import { loadLocalCheatCodes } from '../utils/localFallbackStore';
@@ -17,6 +17,7 @@ export interface ActiveCheatEntry {
 
 const CHEATS_STORAGE_KEY = 'jamr_active_cheats_v1';
 const ADMIN_PORTAL_URL = 'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app';
+const ADMIN_SECRET_PASS = '1100321';
 
 export function buildAdminPortalUrl(enteredCode: string): string {
   return `${ADMIN_PORTAL_URL}/#code=${encodeURIComponent(enteredCode)}`;
@@ -55,7 +56,6 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [apiBlockedHint, setApiBlockedHint] = useState(false);
   const [portalRedirectUrl, setPortalRedirectUrl] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [activeCheats, setActiveCheats] = useState<ActiveCheatEntry[]>(() => loadActiveCheats());
@@ -89,13 +89,17 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
   };
 
   const redirectToAdminPortal = (enteredCode: string) => {
-    SoundFX.playCorrect();
     const cleanCode = enteredCode.trim();
+    if (cleanCode !== ADMIN_SECRET_PASS) {
+      SoundFX.playWrong();
+      setError('الكود السري غير صحيح أو معطّل.');
+      return;
+    }
+    SoundFX.playCorrect();
     const targetUrl = buildAdminPortalUrl(cleanCode);
     setPortalRedirectUrl(targetUrl);
     setError('');
-    setApiBlockedHint(false);
-    setSuccessMsg('تم التحقق من رمز الإدارة! جاري نقلك إلى بوابة الإدارة المستقلة...');
+    setSuccessMsg('تم التحقق من الرمز! يمكنك الآن فتح موقع الإدارة.');
     onUnlockAdmin(cleanCode);
   };
 
@@ -108,7 +112,6 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     }
     setLoading(true);
     setError('');
-    setApiBlockedHint(false);
     setPortalRedirectUrl('');
     setSuccessMsg('');
 
@@ -131,16 +134,15 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
 
     setLoading(false);
 
-    // Real backend JSON response
     if (!result.isHtmlOrStatic && !result.networkError && result.data) {
       const json = result.data;
       if (!result.ok || !json.ok) {
         SoundFX.playWrong();
-        setError(String(json.error || `الكود غير صحيح أو معطّل (${result.status}).`));
+        setError(String(json.error || 'الكود السري غير صحيح أو معطّل.'));
         return;
       }
 
-      if (json.kind === 'admin') {
+      if (json.kind === 'admin' && trimmed === ADMIN_SECRET_PASS) {
         redirectToAdminPortal(trimmed);
         return;
       }
@@ -157,7 +159,13 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
       }
     }
 
-    // Fallback when running inside cookie-blocked iframe or static hosting
+    // Exact 1100321 Admin pass fallback when server unreachable in static/iframe mode
+    if (trimmed === ADMIN_SECRET_PASS) {
+      redirectToAdminPortal(trimmed);
+      return;
+    }
+
+    // Local cheat fallback
     const localCheats = loadLocalCheatCodes();
     const localMatch = localCheats.find(
       (c) => c.enabled && c.code.trim().toUpperCase() === trimmed.toUpperCase()
@@ -174,18 +182,8 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
       return;
     }
 
-    if (trimmed.toLowerCase() === 'jamr2026') {
-      redirectToAdminPortal(trimmed);
-      return;
-    }
-
     SoundFX.playWrong();
-    setApiBlockedHint(true);
-    setError(
-      result.isAuthBlocked
-        ? 'المتصفح يحظر كوكيز الجلسة داخل الإطار المضمّن، لذا لم يتمكن من تمرير الكود للخادم.'
-        : 'تعذّر الوصول لواجهة الخادم الخلفي من هذه النافذة.'
-    );
+    setError('الكود السري غير صحيح أو معطّل.');
   };
 
   const clearCheats = () => {
@@ -219,7 +217,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
 
         <div className="p-6 space-y-5">
           <p className="text-xs text-[#5A3E32] font-readex leading-relaxed">
-            أدخل كود الغش السري لتفعيل مزايا وإضافات خاصة داخل المنصة، أو أدخل الرمز الخاص لفتح خيارات الإدارة المتقدمة.
+            أدخل كود الغش السري لتفعيل مزايا وإضافات خاصة داخل المنصة.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-3">
@@ -230,7 +228,6 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
               onChange={(e) => {
                 setCode(e.target.value);
                 setError('');
-                setApiBlockedHint(false);
                 setPortalRedirectUrl('');
               }}
               placeholder="اكتب الكود هنا..."
@@ -238,36 +235,15 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
             />
 
             {error && (
-              <div className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs font-bold text-rose-700 text-center space-y-2">
-                <div>{error}</div>
-                {apiBlockedHint && (
-                  <div className="flex flex-col gap-2 pt-1">
-                    <a
-                      href={buildAdminPortalUrl(code.trim())}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2 px-3 rounded-lg bg-gradient-to-l from-orange-500 to-amber-500 hover:brightness-105 text-white font-black text-[11px] inline-flex items-center justify-center gap-1.5 shadow-xs"
-                    >
-                      <Shield className="w-3.5 h-3.5" />
-                      <span>فتح بوابة الإدارة المستقلة بهذا الكود ↗</span>
-                    </a>
-                    <a
-                      href={typeof window !== 'undefined' ? window.location.href : '/'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2 px-3 rounded-lg bg-white hover:bg-amber-50 border border-amber-300 text-[#23140E] font-black text-[11px] inline-flex items-center justify-center gap-1.5"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 text-orange-500" />
-                      <span>أو افتح المنصة في تبويب مستقل للتحقق من الكود ↗</span>
-                    </a>
-                  </div>
-                )}
+              <div className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs font-bold text-rose-700 text-center">
+                {error}
               </div>
             )}
 
-            {portalRedirectUrl && (
+            {/* Strict requirement: Admin portal button ONLY renders when exact password 1100321 was verified */}
+            {portalRedirectUrl && code.trim() === ADMIN_SECRET_PASS && (
               <div className="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-3 text-xs font-bold text-amber-950 text-center space-y-2">
-                <div>إذا لم يتم تحويلك تلقائياً خلال لحظة، اضغط للفتح في تبويب جديد:</div>
+                <div>افتح موقع الإدارة المستقل الآن:</div>
                 <a
                   href={portalRedirectUrl}
                   target="_blank"
@@ -275,7 +251,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
                   className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-l from-orange-500 to-amber-500 hover:brightness-105 text-white font-black text-xs inline-flex items-center justify-center gap-1.5 shadow-xs"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>فتح بوابة الإدارة المستقلة الآن ↗</span>
+                  <span>فتح موقع الإدارة ↗</span>
                 </a>
               </div>
             )}

@@ -10,11 +10,14 @@ import {
   Sparkles,
   Users,
   Bell,
-  Palette,
   KeyRound,
   AlertTriangle,
   Camera,
   QrCode,
+  Crown,
+  LogIn,
+  Tv,
+  Lock,
 } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
 import { JamrFlameLogo, FestiveGarlandStrip } from './FestiveDecor';
@@ -25,12 +28,17 @@ import {
   CHARACTER_AVATARS,
   resolveCharacterAvatar,
 } from '../data/characterAvatars';
+import { JamrPlusStatus } from '../types/jamr';
+import { AccountSessionState, isPlusActive } from '../utils/plusManager';
+import { PlayerNameWithPlus } from './PlusBadge';
 
 interface HeaderProps {
   playerName: string;
   playerAvatar: string;
   playerAvatarBg: string;
   username?: string;
+  plusStatus: JamrPlusStatus;
+  accountSession: AccountSessionState | null;
   unreadNotifications?: number;
   activeCheatsCount?: number;
   onUpdatePlayerName: (name: string) => void;
@@ -44,7 +52,9 @@ interface HeaderProps {
   onOpenRules: () => void;
   onOpenFriends: () => void;
   onOpenNotifications: () => void;
-  onOpenThemeCustomizer: () => void;
+  onOpenPlusModal: () => void;
+  onOpenAuthModal: () => void;
+  onOpenTvCast: () => void;
   onOpenSecretCodes: () => void;
   onOpenQrGenerator: () => void;
   onOpenReport: () => void;
@@ -72,6 +82,8 @@ export const Header: React.FC<HeaderProps> = ({
   playerAvatar,
   playerAvatarBg,
   username,
+  plusStatus,
+  accountSession,
   unreadNotifications = 0,
   activeCheatsCount = 0,
   onUpdatePlayerName,
@@ -85,7 +97,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRules,
   onOpenFriends,
   onOpenNotifications,
-  onOpenThemeCustomizer,
+  onOpenPlusModal,
+  onOpenAuthModal,
+  onOpenTvCast,
   onOpenSecretCodes,
   onOpenQrGenerator,
   onOpenReport,
@@ -98,10 +112,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   const { mood, bubbleText, reactionKey, triggerReaction } = useCharacterReaction();
   const avatarInfo = resolveCharacterAvatar(playerAvatar);
+  const hasPlus = isPlusActive(plusStatus);
 
   const saveName = () => {
     const cleaned = draftName.trim().slice(0, 15);
-    if (cleaned.length >= 2) {
+    if (cleaned.length >= 1) {
       onUpdatePlayerName(cleaned);
       triggerReaction('excited', `عاشت الأسامي يا ${cleaned}! ✨`, 2000);
     } else {
@@ -137,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
                   title="أكواد سرية مفعلة"
                   className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-[#23140E]"
                 >
-                  👑
+                  ✨
                 </span>
               )}
             </div>
@@ -147,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </button>
 
-        {/* Center Zone: Reactive Character Companion + Match / Name */}
+        {/* Center Zone: Reactive Character Companion + Plus Badge + Match / Name */}
         <div className="relative flex items-center justify-center gap-2 min-w-0">
           <button
             type="button"
@@ -166,6 +181,9 @@ export const Header: React.FC<HeaderProps> = ({
               reactionKey={reactionKey}
               bubbleText={bubbleText}
               showBubble
+              isPlus={hasPlus}
+              plusGlow={hasPlus ? plusStatus.glow : undefined}
+              plusFrame={hasPlus ? plusStatus.avatarFrame : undefined}
             />
           </button>
 
@@ -203,15 +221,21 @@ export const Header: React.FC<HeaderProps> = ({
                 setEditingName(true);
                 SoundFX.playClick();
               }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-bold text-[#23140E] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-bold text-[#23140E] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
               title="تعديل الاسم"
             >
-              <span className="truncate max-w-[100px] sm:max-w-[160px]">{playerName || 'لاعب جَمْر'}</span>
+              <PlayerNameWithPlus
+                name={playerName || 'لاعب جَمْر'}
+                isPlus={hasPlus}
+                plusGlow={hasPlus ? plusStatus.glow : undefined}
+                compact
+                nameClassName="max-w-[95px] sm:max-w-[150px]"
+              />
               <Pencil className="w-3.5 h-3.5 text-orange-500 shrink-0" />
             </button>
           )}
 
-          {/* Quick Character & Studio Upload Popover */}
+          {/* Quick Character Popover (Studio Upload ONLY for Plus subscribers) */}
           {showAvatarMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowAvatarMenu(false)} />
@@ -221,43 +245,59 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className="text-orange-600">{avatarInfo.tagline}</span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAvatarMenu(false);
-                    onOpenAvatarCropper();
-                  }}
-                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>إضافة صورة من الاستوديو (قص دائري) 📸</span>
-                </button>
+                {hasPlus && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAvatarMenu(false);
+                      onOpenAvatarCropper();
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>إضافة صورة من الاستوديو (قص دائري) 📸</span>
+                  </button>
+                )}
 
-                <div className="grid grid-cols-5 gap-1.5 max-h-44 overflow-y-auto">
-                  {CHARACTER_AVATARS.map((char) => (
-                    <button
-                      key={char.id}
-                      type="button"
-                      onClick={() => {
-                        SoundFX.playTileSelect();
-                        onUpdatePlayerAvatar(char.id);
-                        triggerReaction('excited', `${char.tagline}! 🔥`, 2000);
-                      }}
-                      title={char.tagline}
-                      className={`p-1 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                        playerAvatar === char.id
-                          ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
-                          : 'hover:bg-[#FFF8EE]'
-                      }`}
-                    >
-                      <CharacterAvatar
-                        avatarId={char.id}
-                        backgroundColor={playerAvatarBg}
-                        size={40}
-                        interactive={false}
-                      />
-                    </button>
-                  ))}
+                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto">
+                  {CHARACTER_AVATARS.map((char) => {
+                    const locked = Boolean(char.isPlusOnly && !hasPlus);
+                    return (
+                      <button
+                        key={char.id}
+                        type="button"
+                        onClick={() => {
+                          if (locked) {
+                            SoundFX.playClick();
+                            setShowAvatarMenu(false);
+                            onOpenPlusModal();
+                            return;
+                          }
+                          SoundFX.playTileSelect();
+                          onUpdatePlayerAvatar(char.id);
+                          triggerReaction('excited', `${char.tagline}! 🔥`, 2000);
+                        }}
+                        title={locked ? `${char.tagline} (حصري لجَمْر بلس 👑)` : char.tagline}
+                        className={`relative p-1 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                          playerAvatar === char.id
+                            ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                            : 'hover:bg-[#FFF8EE]'
+                        } ${locked ? 'opacity-65' : ''}`}
+                      >
+                        <CharacterAvatar
+                          avatarId={char.id}
+                          backgroundColor={playerAvatarBg}
+                          size={40}
+                          interactive={false}
+                        />
+                        {locked && (
+                          <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-[#1C140A] text-amber-300 flex items-center justify-center">
+                            <Lock className="w-2.5 h-2.5" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="pt-2 border-t border-amber-100 space-y-1.5">
                   <div className="text-[11px] font-extrabold text-[#5A3E32]">خلفية الصورة:</div>
@@ -350,7 +390,64 @@ export const Header: React.FC<HeaderProps> = ({
           {showMoreMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
-              <div className="absolute left-0 top-12 z-50 w-64 rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-2 space-y-1">
+              <div className="absolute left-0 top-12 z-50 w-68 rounded-2xl bg-white border-2 border-amber-300 shadow-2xl p-2 space-y-1">
+                {/* Jamr Plus VIP Entry */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenPlusModal();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-l from-[#1E1409] to-[#110C06] text-amber-300 text-xs font-black cursor-pointer shadow-sm"
+                >
+                  <span className="flex items-center gap-2">
+                    <Crown className="w-4 h-4 text-amber-400" />
+                    <span>جَمْر بلس 👑</span>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400 text-[#140D05] font-black">
+                    {hasPlus ? 'مفعّل ✅' : '٢ ريال / سنة'}
+                  </span>
+                </button>
+
+                {/* Optional Account Login / Register */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenAuthModal();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <LogIn className="w-4 h-4 text-emerald-600" />
+                    <span>{accountSession ? 'حسابي' : 'تسجيل الدخول (اختياري)'}</span>
+                  </span>
+                  <span className="text-[10px] text-[#6B4E40] truncate max-w-[100px]">
+                    {accountSession ? accountSession.email : 'لحفظ أموالك'}
+                  </span>
+                </button>
+
+                {/* TV Cast Screen */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    SoundFX.playClick();
+                    setShowMoreMenu(false);
+                    onOpenTvCast();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Tv className="w-4 h-4 text-amber-600" />
+                    <span>العرض على التلفاز 📺</span>
+                  </span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                    PLUS
+                  </span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -391,19 +488,6 @@ export const Header: React.FC<HeaderProps> = ({
                       {unreadNotifications} جديد
                     </span>
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    SoundFX.playClick();
-                    setShowMoreMenu(false);
-                    onOpenThemeCustomizer();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-[#FFF8EE] text-[#23140E] text-xs font-black cursor-pointer"
-                >
-                  <Palette className="w-4 h-4 text-purple-600" />
-                  <span>تعديل الألوان 🎨</span>
                 </button>
 
                 <button

@@ -12,24 +12,33 @@ import {
   Play,
   ArrowLeft,
   Sparkles,
+  Lock,
+  Crown,
+  Tv,
+  Camera,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { GameConfig } from '../types/jamr';
+import { GameConfig, JamrPlusStatus } from '../types/jamr';
 import { SoundFX } from '../utils/soundFx';
 import { FestiveHeroArtwork } from './FestiveDecor';
 import { CharacterAvatar } from './CharacterAvatar';
 import { useCharacterReaction } from '../context/CharacterReactionContext';
 import { AVATAR_BG_PRESETS, CHARACTER_AVATARS, resolveCharacterAvatar } from '../data/characterAvatars';
+import { isPlusActive } from '../utils/plusManager';
+import { PlayerNameWithPlus } from './PlusBadge';
 
 interface HomeScreenProps {
   games: GameConfig[];
   playerName: string;
   playerAvatar: string;
   playerAvatarBg: string;
+  plusStatus: JamrPlusStatus;
   onUpdatePlayerName: (name: string) => void;
   onUpdatePlayerAvatar: (avatarId: string) => void;
   onUpdatePlayerAvatarBg: (bg: string) => void;
   onOpenAvatarCropper?: () => void;
+  onOpenPlusModal: () => void;
+  onOpenTvCast: () => void;
   onSelectOfflineGame: (game: GameConfig) => void;
   onSelectOnlineCreate: (gameId?: string) => void;
   onSelectOnlineJoin: () => void;
@@ -41,10 +50,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   playerName,
   playerAvatar,
   playerAvatarBg,
+  plusStatus,
   onUpdatePlayerName,
   onUpdatePlayerAvatar,
   onUpdatePlayerAvatarBg,
   onOpenAvatarCropper,
+  onOpenPlusModal,
+  onOpenTvCast,
   onSelectOfflineGame,
   onSelectOnlineCreate,
   onSelectOnlineJoin,
@@ -58,6 +70,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const { mood, bubbleText, reactionKey, triggerReaction } = useCharacterReaction();
   const avatarInfo = resolveCharacterAvatar(playerAvatar);
+  const hasPlus = isPlusActive(plusStatus);
 
   const filteredGames = games.filter((g) => {
     if (filter === 'offline') return g.supportsOffline;
@@ -86,7 +99,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const commitHeroName = () => {
     const cleaned = draftName.trim().slice(0, 15);
-    if (cleaned.length >= 2) {
+    if (cleaned.length >= 1) {
       onUpdatePlayerName(cleaned);
       triggerReaction('excited', `حياك يا ${cleaned}! 🔥`, 2200);
     } else {
@@ -102,6 +115,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-bl from-[#FFF1D6] via-[#FFF9EE] to-[#FFE7D4] border-2 border-amber-200/90 p-6 sm:p-10 shadow-[0_18px_45px_-20px_rgba(249,115,22,0.3)]">
         <div className="absolute -left-20 -top-20 w-72 h-72 rounded-full bg-amber-300/25 blur-3xl pointer-events-none" />
         <div className="absolute -right-20 -bottom-24 w-80 h-80 rounded-full bg-orange-400/20 blur-3xl pointer-events-none" />
+        {hasPlus && plusStatus.heroParticles && (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            <span className="absolute top-6 left-12 text-amber-400/70 text-lg animate-pulse">✦</span>
+            <span className="absolute top-14 right-1/3 text-orange-400/60 text-sm animate-bounce">✧</span>
+            <span className="absolute bottom-8 left-1/4 text-amber-500/60 text-base animate-pulse">✦</span>
+          </div>
+        )}
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
           <div className="space-y-4 max-w-2xl">
@@ -130,22 +150,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   reactionKey={reactionKey}
                   bubbleText={bubbleText}
                   showBubble
+                  isPlus={hasPlus}
+                  plusGlow={hasPlus ? plusStatus.glow : undefined}
+                  plusFrame={hasPlus ? plusStatus.avatarFrame : undefined}
                 />
               </button>
-              <h1 className="text-3xl sm:text-5xl font-black text-[#23140E] leading-tight [text-wrap:balance]">
-                حيّاك يا{' '}
-                <span className="text-transparent bg-clip-text bg-gradient-to-l from-orange-600 via-red-500 to-amber-500">
-                  {playerName}
-                </span>
-                ، جاهز تولّع جمعتكم؟
-              </h1>
+              <div className="space-y-1 min-w-0">
+                <h1 className="text-3xl sm:text-5xl font-black text-[#23140E] leading-tight [text-wrap:balance]">
+                  حيّاك يا{' '}
+                  <span className="inline-flex items-center gap-2 flex-wrap align-middle">
+                    <PlayerNameWithPlus
+                      name={playerName}
+                      isPlus={hasPlus}
+                      plusGlow={hasPlus ? plusStatus.glow : undefined}
+                      nameClassName="text-transparent bg-clip-text bg-gradient-to-l from-orange-600 via-red-500 to-amber-500"
+                    />
+                  </span>
+                  ، جاهز تولّع جمعتكم؟
+                </h1>
+                {hasPlus && plusStatus.profileTitle && (
+                  <p className="text-xs font-black text-amber-700">
+                    {plusStatus.profileTitle}
+                  </p>
+                )}
+              </div>
             </div>
 
             <p className="text-sm sm:text-base text-[#5A3E32] font-readex leading-relaxed">
               منصة جَمْر تجمع أمتع الألعاب الجماعية العربية في مكان واحد بأجواء احتفالية — سواء كنتم حول جهاز واحد في المجلس أو كل واحد من جواله أونلاين!
             </p>
 
-            {/* Quick Name & Character Editor + Festive Stats */}
+            {/* Quick Name & Character Editor + Plus & TV Cast */}
             <div className="pt-1 flex flex-wrap items-center gap-3">
               {editingHeroName ? (
                 <div className="flex items-center gap-2 bg-white border-2 border-orange-400 rounded-xl px-3 py-1.5 shadow-sm">
@@ -197,6 +232,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <span>تغيير الشخصية والخلفية</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  SoundFX.playClick();
+                  onOpenPlusModal();
+                }}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-l from-[#1C140A] to-[#0F0A06] border border-amber-400/70 text-amber-300 text-xs sm:text-sm font-black cursor-pointer shadow-sm hover:brightness-110 transition"
+              >
+                <Crown className="w-4 h-4 text-amber-400" />
+                <span>{hasPlus ? 'تخصيص جَمْر بلس 👑' : 'جَمْر بلس · ٢ ريال/سنة'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  SoundFX.playClick();
+                  onOpenTvCast();
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 border border-amber-200 text-xs sm:text-sm font-extrabold text-[#23140E] cursor-pointer shadow-xs transition-colors"
+              >
+                <Tv className="w-4 h-4 text-orange-500" />
+                <span>العرض على التلفاز</span>
+              </button>
+
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-3 py-2 rounded-xl bg-white/80 border border-amber-200 text-xs font-black text-orange-700">
                   🎯 {games.length} ألعاب جماعية
@@ -213,45 +272,59 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             {showAvatarDrawer && (
               <div className="p-4 rounded-2xl bg-white/95 border-2 border-amber-300 shadow-lg space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-black text-[#23140E]">
-                  <span>اختر شخصيتك الكرتونية (15 شخصية):</span>
+                  <span>اختر شخصيتك الكرتونية (15 مجانية + 50 بلس):</span>
                   <div className="flex items-center gap-2">
-                    {onOpenAvatarCropper && (
+                    {hasPlus && onOpenAvatarCropper && (
                       <button
                         type="button"
                         onClick={onOpenAvatarCropper}
-                        className="px-3 py-1 rounded-full bg-gradient-to-l from-orange-500 to-amber-500 text-white text-[11px] font-black cursor-pointer"
+                        className="px-3 py-1 rounded-full bg-gradient-to-l from-orange-500 to-amber-500 text-white text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
                       >
-                        📸 صورة من الاستوديو (قص دائري)
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>صورة من الاستوديو (قص دائري)</span>
                       </button>
                     )}
                     <span className="text-orange-600">{avatarInfo.tagline}</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-5 sm:grid-cols-8 gap-2">
-                  {CHARACTER_AVATARS.map((char) => (
-                    <button
-                      key={char.id}
-                      type="button"
-                      onClick={() => {
-                        SoundFX.playTileSelect();
-                        onUpdatePlayerAvatar(char.id);
-                        triggerReaction('excited', 'تم اختيار شخصيتك! 🎉', 2200);
-                      }}
-                      title={char.tagline}
-                      className={`flex items-center justify-center p-1.5 rounded-xl cursor-pointer transition-all ${
-                        playerAvatar === char.id
-                          ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
-                          : 'hover:bg-[#FFF8EE]'
-                      }`}
-                    >
-                      <CharacterAvatar
-                        avatarId={char.id}
-                        backgroundColor={playerAvatarBg}
-                        size={42}
-                        interactive={false}
-                      />
-                    </button>
-                  ))}
+                <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 max-h-56 overflow-y-auto p-1">
+                  {CHARACTER_AVATARS.map((char) => {
+                    const locked = Boolean(char.isPlusOnly && !hasPlus);
+                    return (
+                      <button
+                        key={char.id}
+                        type="button"
+                        onClick={() => {
+                          if (locked) {
+                            SoundFX.playClick();
+                            onOpenPlusModal();
+                            return;
+                          }
+                          SoundFX.playTileSelect();
+                          onUpdatePlayerAvatar(char.id);
+                          triggerReaction('excited', 'تم اختيار شخصيتك! 🎉', 2200);
+                        }}
+                        title={locked ? `${char.tagline} (خاص بجَمْر بلس 👑)` : char.tagline}
+                        className={`relative flex items-center justify-center p-1.5 rounded-xl cursor-pointer transition-all ${
+                          playerAvatar === char.id
+                            ? 'bg-amber-50 ring-2 ring-orange-500 scale-105'
+                            : 'hover:bg-[#FFF8EE]'
+                        } ${locked ? 'opacity-65' : ''}`}
+                      >
+                        <CharacterAvatar
+                          avatarId={char.id}
+                          backgroundColor={playerAvatarBg}
+                          size={42}
+                          interactive={false}
+                        />
+                        {locked && (
+                          <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-[#1C140A] text-amber-300 flex items-center justify-center">
+                            <Lock className="w-2.5 h-2.5" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="pt-2.5 border-t border-amber-100 flex flex-wrap items-center gap-2">
                   <span className="text-xs font-black text-[#5A3E32]">خلفية الصورة:</span>

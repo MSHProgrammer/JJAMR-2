@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, Palette } from 'lucide-react';
+import { Sparkles, Palette, Lock } from 'lucide-react';
 import { SoundFX } from '../utils/soundFx';
 import { JamrFlameLogo } from './FestiveDecor';
 import {
@@ -15,15 +15,19 @@ import { CharacterAvatar } from './CharacterAvatar';
 interface NameOnboardingModalProps {
   initialAvatar?: string;
   initialAvatarBg?: string;
+  isPlus?: boolean;
   onConfirm: (name: string, avatarId: string, avatarBg: string) => void;
   onOpenAvatarCropper?: () => void;
+  onOpenPlusModal?: () => void;
 }
 
 export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
   initialAvatar = DEFAULT_AVATAR_ID,
   initialAvatarBg = DEFAULT_AVATAR_BG,
+  isPlus = false,
   onConfirm,
   onOpenAvatarCropper,
+  onOpenPlusModal,
 }) => {
   const [name, setName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(initialAvatar);
@@ -40,8 +44,8 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = name.trim();
-    if (cleaned.length < 2) {
-      setError('اكتب اسماً أو لقباً من حرفين على الأقل للبدء.');
+    if (cleaned.length < 1) {
+      setError('اكتب اسماً أو لقباً للبدء.');
       return;
     }
     SoundFX.playCorrect();
@@ -95,10 +99,10 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <label className="text-xs font-extrabold text-orange-700">
-                اختر شخصيتك (15 شخصية):
+                اختر شخصيتك (15 مجانية + 50 بلس):
               </label>
               <div className="flex items-center gap-2">
-                {onOpenAvatarCropper && (
+                {isPlus && onOpenAvatarCropper && (
                   <button
                     type="button"
                     onClick={onOpenAvatarCropper}
@@ -116,21 +120,27 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
             <div className="grid grid-cols-5 gap-2 p-3 rounded-2xl bg-[#FFF8EE] border border-amber-200 max-h-56 overflow-y-auto">
               {CHARACTER_AVATARS.map((char) => {
                 const isSelected = selectedAvatar === char.id;
+                const locked = Boolean(char.isPlusOnly && !isPlus);
                 return (
                   <button
                     key={char.id}
                     type="button"
                     onClick={() => {
+                      if (locked) {
+                        SoundFX.playClick();
+                        onOpenPlusModal?.();
+                        return;
+                      }
                       SoundFX.playTileSelect();
                       setSelectedAvatar(char.id);
                       setPreviewKey((k) => k + 1);
                     }}
-                    title={char.tagline}
-                    className={`flex flex-col items-center gap-1 p-1.5 rounded-2xl transition-all cursor-pointer ${
+                    title={locked ? `${char.tagline} (خاص بجَمْر بلس 👑)` : char.tagline}
+                    className={`relative flex flex-col items-center gap-1 p-1.5 rounded-2xl transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-white ring-2 ring-orange-500 shadow-md scale-105'
                         : 'hover:bg-white/80 opacity-85 hover:opacity-100'
-                    }`}
+                    } ${locked ? 'opacity-60' : ''}`}
                   >
                     <CharacterAvatar
                       avatarId={char.id}
@@ -139,6 +149,11 @@ export const NameOnboardingModal: React.FC<NameOnboardingModalProps> = ({
                       mood={isSelected ? 'picking_game' : 'idle'}
                       interactive={false}
                     />
+                    {locked && (
+                      <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-[#1C140A] text-amber-300 flex items-center justify-center">
+                        <Lock className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </button>
                 );
               })}

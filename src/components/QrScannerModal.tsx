@@ -1,16 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { Camera, ImagePlus, X, AlertCircle, ScanLine } from 'lucide-react';
-import { extractRoomCodeFromQrPayload } from '../utils/qrHelper';
+import {
+  extractAdminUsernameFromQrPayload,
+  extractRoomCodeFromQrPayload,
+  extractTvCodeFromQrPayload,
+} from '../utils/qrHelper';
 import { SoundFX } from '../utils/soundFx';
 
 interface QrScannerModalProps {
   onScannedRoomCode: (roomCode: string) => void;
+  onScannedAdminUsername?: (username: string) => void;
+  onScannedTvCode?: (tvCode: string) => void;
   onClose: () => void;
 }
 
 export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   onScannedRoomCode,
+  onScannedAdminUsername,
+  onScannedTvCode,
   onClose,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -79,6 +87,20 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             const imgData = ctx.getImageData(0, 0, w, h);
             const decoded = jsQR(imgData.data, w, h, { inversionAttempts: 'dontInvert' });
             if (decoded?.data) {
+              const tvCode = extractTvCodeFromQrPayload(decoded.data);
+              if (tvCode && onScannedTvCode) {
+                SoundFX.playCorrect();
+                stopCamera();
+                onScannedTvCode(tvCode);
+                return;
+              }
+              const adminUser = extractAdminUsernameFromQrPayload(decoded.data);
+              if (adminUser && onScannedAdminUsername) {
+                SoundFX.playCorrect();
+                stopCamera();
+                onScannedAdminUsername(adminUser);
+                return;
+              }
               const roomCode = extractRoomCodeFromQrPayload(decoded.data);
               if (roomCode) {
                 SoundFX.playCorrect();
@@ -99,7 +121,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
       cancelled = true;
       stopCamera();
     };
-  }, [onScannedRoomCode]);
+  }, [onScannedRoomCode, onScannedAdminUsername, onScannedTvCode]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -118,6 +140,20 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
         const data = ctx.getImageData(0, 0, img.width, img.height);
         const decoded = jsQR(data.data, img.width, img.height);
         if (decoded?.data) {
+          const tvCode = extractTvCodeFromQrPayload(decoded.data);
+          if (tvCode && onScannedTvCode) {
+            SoundFX.playCorrect();
+            stopCamera();
+            onScannedTvCode(tvCode);
+            return;
+          }
+          const adminUser = extractAdminUsernameFromQrPayload(decoded.data);
+          if (adminUser && onScannedAdminUsername) {
+            SoundFX.playCorrect();
+            stopCamera();
+            onScannedAdminUsername(adminUser);
+            return;
+          }
           const roomCode = extractRoomCodeFromQrPayload(decoded.data);
           if (roomCode) {
             SoundFX.playCorrect();
@@ -127,7 +163,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
           }
         }
         SoundFX.playWrong();
-        setError('لم يتم العثور على كود غرفة صالح داخل هذه الصورة.');
+        setError('لم يتم العثور على كود غرفة أو شاشة صالح داخل هذه الصورة.');
       };
       img.src = String(reader.result || '');
     };

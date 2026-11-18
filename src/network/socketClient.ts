@@ -1,5 +1,6 @@
 import { AppNotification, BarrahCategory, RoomState } from '../types/jamr';
 import { LocalRoomCoordinator } from './LocalRoomCoordinator';
+import { isPlusActive, loadPlusStatus } from '../utils/plusManager';
 
 export type SocketStatus = 'disconnected' | 'connecting' | 'connected' | 'p2p';
 
@@ -24,6 +25,14 @@ export function getOrCreateSessionPlayerId(): string {
   } catch {
     return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   }
+}
+
+export function getWebSocketUrl(): string {
+  if (typeof window === 'undefined') return '';
+  const envUrl = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_WS_URL;
+  if (envUrl) return envUrl;
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws`;
 }
 
 export class JamrSocketClient {
@@ -90,10 +99,7 @@ export class JamrSocketClient {
   }
 
   private getWsUrl(): string {
-    const envUrl = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_WS_URL;
-    if (envUrl) return envUrl;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}/ws`;
+    return getWebSocketUrl();
   }
 
   public async connect(): Promise<boolean> {
@@ -271,6 +277,8 @@ export class JamrSocketClient {
     this.callbacks.onRoomState(room);
 
     // Ensure live WebSocket is connected and subscribed to this room for instant push updates
+    const plusNow = loadPlusStatus();
+    const plusOk = isPlusActive(plusNow);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.callbacks.onStatusChange('connected', false);
       this.stopFallbackPoll();
@@ -281,6 +289,10 @@ export class JamrSocketClient {
         playerName: this.lastKnownName || 'لاعب',
         avatar: this.lastKnownAvatar || 'char_01',
         avatarBg: this.lastKnownAvatarBg || 'lavender',
+        isPlus: plusOk,
+        plusGlow: plusOk ? plusNow.glow : undefined,
+        plusTitle: plusOk ? plusNow.profileTitle : undefined,
+        plusFrame: plusOk ? plusNow.avatarFrame : undefined,
       });
     } else {
       this.startFallbackPoll();
@@ -395,10 +407,19 @@ export class JamrSocketClient {
     this.lastKnownName = params.playerName;
     this.lastKnownAvatar = params.avatar;
     this.lastKnownAvatarBg = params.avatarBg || 'lavender';
+    const plusNow = loadPlusStatus();
+    const plusOk = isPlusActive(plusNow);
+    const enrichedParams = {
+      ...params,
+      isPlus: plusOk,
+      plusGlow: plusOk ? plusNow.glow : undefined,
+      plusTitle: plusOk ? plusNow.profileTitle : undefined,
+      plusFrame: plusOk ? plusNow.avatarFrame : undefined,
+    };
 
     if (this.shouldForceP2P()) {
       this.activateP2P();
-      this.p2p?.createRoom({ ...params, playerId: this.playerId });
+      this.p2p?.createRoom({ ...enrichedParams, playerId: this.playerId });
       return;
     }
 
@@ -408,7 +429,7 @@ export class JamrSocketClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           playerId: this.playerId,
-          ...params,
+          ...enrichedParams,
         }),
       });
 
@@ -427,14 +448,14 @@ export class JamrSocketClient {
     }
 
     // Secondary attempt over WebSocket if already open
-    if (this.sendWsRaw({ type: 'create_room', ...params })) {
+    if (this.sendWsRaw({ type: 'create_room', ...enrichedParams })) {
       return;
     }
 
     // Final fallback on static hosts without backend server
     this.backendAvailable = false;
     this.activateP2P();
-    this.p2p?.createRoom({ ...params, playerId: this.playerId });
+    this.p2p?.createRoom({ ...enrichedParams, playerId: this.playerId });
   }
 
   public async joinRoom(params: {
@@ -448,6 +469,8 @@ export class JamrSocketClient {
     this.lastKnownName = params.playerName;
     this.lastKnownAvatar = params.avatar;
     this.lastKnownAvatarBg = params.avatarBg || 'lavender';
+    const plusNow = loadPlusStatus();
+    const plusOk = isPlusActive(plusNow);
 
     if (this.shouldForceP2P()) {
       this.activateP2P();
@@ -471,6 +494,10 @@ export class JamrSocketClient {
           playerName: params.playerName,
           avatar: params.avatar,
           avatarBg: params.avatarBg,
+          isPlus: plusOk,
+          plusGlow: plusOk ? plusNow.glow : undefined,
+          plusTitle: plusOk ? plusNow.profileTitle : undefined,
+          plusFrame: plusOk ? plusNow.avatarFrame : undefined,
         }),
       });
 
@@ -499,6 +526,10 @@ export class JamrSocketClient {
         playerName: params.playerName,
         avatar: params.avatar,
         avatarBg: params.avatarBg,
+        isPlus: plusOk,
+        plusGlow: plusOk ? plusNow.glow : undefined,
+        plusTitle: plusOk ? plusNow.profileTitle : undefined,
+        plusFrame: plusOk ? plusNow.avatarFrame : undefined,
       })
     ) {
       return;

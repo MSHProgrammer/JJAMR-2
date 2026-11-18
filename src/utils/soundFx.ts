@@ -122,6 +122,10 @@ class JamrSoundEngine {
     });
   }
 
+  playWin() {
+    this.playVictory();
+  }
+
   playHoneycomb() {
     this.tone(392, 0.1, 'sine', 0.1, 0);
     this.tone(587.33, 0.16, 'triangle', 0.12, 0.07);

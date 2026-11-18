@@ -458,9 +458,27 @@ export const DetectiveAccusationAndReveal: React.FC<DetectiveAccusationAndReveal
       )}
 
       {lastAttemptFeedback && !lastAttemptFeedback.correct && (
-        <div className="rounded-xl bg-[#2D1216] border border-[#B8333C] px-4 py-2.5 text-xs font-bold text-[#F08088] flex items-center gap-2">
-          <XCircle size={15} className="shrink-0" />
-          <span>{lastAttemptFeedback.message}</span>
+        <div className="rounded-xl bg-[#2D1216] border border-[#B8333C] px-4 py-3 text-xs font-bold text-[#F08088] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <XCircle size={15} className="shrink-0" />
+            <span>{lastAttemptFeedback.message}</span>
+          </div>
+          {mode === 'offline' && (
+            <button
+              type="button"
+              disabled={verifying}
+              onClick={() =>
+                onSubmitSoloAccusation?.(
+                  selectedSuspectId || caseData.suspects[0]?.id || '',
+                  reason.trim(),
+                  true
+                )
+              }
+              className="px-3 py-1.5 rounded-lg bg-[#7A1219] hover:bg-[#961820] text-white text-[11px] font-black border border-[#E5C16C]/50 cursor-pointer"
+            >
+              كشف الحل الكامل وإغلاق الملف الآن
+            </button>
+          )}
         </div>
       )}
 

@@ -2,6 +2,8 @@ import React from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { resolveAvatarBgCss, resolveCharacterAvatar } from '../data/characterAvatars';
 import { CharacterMood } from '../context/CharacterReactionContext';
+import { PlusGlowConfig } from '../types/jamr';
+import { getGlowStyleForPlayer, PLUS_AVATAR_FRAMES } from '../utils/plusManager';
 
 interface CharacterAvatarProps {
   avatarId?: string | null;
@@ -12,6 +14,9 @@ interface CharacterAvatarProps {
   bubbleText?: string | null;
   showBubble?: boolean;
   interactive?: boolean;
+  isPlus?: boolean;
+  plusGlow?: PlusGlowConfig;
+  plusFrame?: string;
   className?: string;
 }
 
@@ -24,6 +29,9 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
   bubbleText,
   showBubble = false,
   interactive = true,
+  isPlus = false,
+  plusGlow,
+  plusFrame,
   className = '',
 }) => {
   const shouldReduceMotion = useReducedMotion();
@@ -176,22 +184,33 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
       </AnimatePresence>
 
       {/* Main Animated Portrait */}
-      <motion.div
-        key={`${info.id}_${mood}_${reactionKey}`}
-        animate={anim.animate}
-        transition={anim.transition}
-        whileHover={interactive && !shouldReduceMotion ? { scale: 1.12, rotate: -4 } : undefined}
-        whileTap={interactive && !shouldReduceMotion ? { scale: 0.94 } : undefined}
-        style={{ background: bgCss }}
-        className={`w-full h-full rounded-full overflow-hidden ${ringClass}`}
-      >
-        <img
-          src={info.imageUrl}
-          alt={info.tagline}
-          draggable={false}
-          className="w-full h-full object-cover"
-        />
-      </motion.div>
+      {(() => {
+        const frameMeta = plusFrame ? PLUS_AVATAR_FRAMES.find((f) => f.id === plusFrame) : undefined;
+        const glowCss = getGlowStyleForPlayer(isPlus, plusGlow);
+        return (
+          <motion.div
+            key={`${info.id}_${mood}_${reactionKey}`}
+            animate={anim.animate}
+            transition={anim.transition}
+            whileHover={interactive && !shouldReduceMotion ? { scale: 1.12, rotate: -4 } : undefined}
+            whileTap={interactive && !shouldReduceMotion ? { scale: 0.94 } : undefined}
+            style={{
+              background: bgCss,
+              ...(glowCss ? { boxShadow: glowCss.boxShadow } : {}),
+            }}
+            className={`w-full h-full rounded-full overflow-hidden ${
+              isPlus && frameMeta && frameMeta.ringCss ? frameMeta.ringCss : ringClass
+            }`}
+          >
+            <img
+              src={info.imageUrl}
+              alt={info.tagline}
+              draggable={false}
+              className="w-full h-full object-cover"
+            />
+          </motion.div>
+        );
+      })()}
 
       {/* Corner Reaction Micro-Badge */}
       <AnimatePresence>
