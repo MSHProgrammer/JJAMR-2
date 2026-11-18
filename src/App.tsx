@@ -53,7 +53,7 @@ import {
   sanitizeAvatarId,
 } from './data/characterAvatars';
 
-const ADMIN_PORTAL_URL = 'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app';
+const ADMIN_PORTAL_URL = 'https://aledara-jamr.vercel.app';
 
 type ViewMode =
   | { kind: 'home' }

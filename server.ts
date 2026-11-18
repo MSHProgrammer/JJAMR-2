@@ -212,6 +212,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Edge cache control, CORS (for standalone Admin Portal), & rate limiting for /api
 const ALLOWED_CORS_ORIGINS = new Set([
+  'https://aledara-jamr.vercel.app',
   'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app',
   'https://ais-dev-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app',
 ]);

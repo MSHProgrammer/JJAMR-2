@@ -16,7 +16,7 @@ export interface ActiveCheatEntry {
 }
 
 const CHEATS_STORAGE_KEY = 'jamr_active_cheats_v1';
-const ADMIN_PORTAL_URL = 'https://ais-pre-hxpy5566j6xae4ya2hfuj2-546090154039.europe-west2.run.app';
+const ADMIN_PORTAL_URL = 'https://aledara-jamr.vercel.app';
 const ADMIN_SECRET_PASS = '1100321';
 
 export function buildAdminPortalUrl(enteredCode: string): string {

@@ -241,7 +241,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-l from-[#1C140A] to-[#0F0A06] border border-amber-400/70 text-amber-300 text-xs sm:text-sm font-black cursor-pointer shadow-sm hover:brightness-110 transition"
               >
                 <Crown className="w-4 h-4 text-amber-400" />
-                <span>{hasPlus ? 'تخصيص جَمْر بلس 👑' : 'جَمْر بلس · ٢ ريال/سنة'}</span>
+                <span>{hasPlus ? 'تخصيص جَمْر بلس 👑' : 'جَمْر بلس ٢ ريال/سنة'}</span>
               </button>
 
               <button
