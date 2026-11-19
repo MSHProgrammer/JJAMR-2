@@ -59,6 +59,24 @@ export function extractRoomCodeFromQrPayload(rawPayload: string): string | null 
   return null;
 }
 
+export function extractAdminQrTokenFromPayload(rawPayload: string): string | null {
+  const trimmed = String(rawPayload || '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsedUrl = new URL(trimmed);
+    const tok = parsedUrl.searchParams.get('claim_qr') || parsedUrl.searchParams.get('qr_token');
+    if (tok && tok.trim().length >= 4) return tok.trim();
+  } catch {
+    // ignore URL parse error
+  }
+  const m = trimmed.match(/[?&](?:claim_qr|qr_token)=([a-zA-Z0-9_-]{4,80})/i);
+  if (m?.[1]) return m[1];
+  if (/^(?:jqr_|qr_)[a-zA-Z0-9_-]{4,80}$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
 export function extractAdminUsernameFromQrPayload(rawPayload: string): string | null {
   const trimmed = String(rawPayload || '').trim();
   if (!trimmed) return null;
@@ -66,8 +84,10 @@ export function extractAdminUsernameFromQrPayload(rawPayload: string): string | 
     const parsedUrl = new URL(trimmed);
     const param =
       parsedUrl.searchParams.get('assign_username') ||
+      parsedUrl.searchParams.get('claim_username') ||
       parsedUrl.searchParams.get('admin_user') ||
-      parsedUrl.searchParams.get('username');
+      parsedUrl.searchParams.get('username') ||
+      parsedUrl.searchParams.get('u');
     if (param) {
       const clean = param.trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
       if (clean.length >= 1) return clean;
@@ -75,7 +95,7 @@ export function extractAdminUsernameFromQrPayload(rawPayload: string): string | 
   } catch {
     // ignore URL parse error
   }
-  const m = trimmed.match(/(?:assign_username|admin_user|jamr:\/\/user\/)=?([a-zA-Z0-9_]{1,20})/i);
+  const m = trimmed.match(/(?:assign_username|claim_username|admin_user|jamr:\/\/user\/)=?([a-zA-Z0-9_]{1,20})/i);
   if (m?.[1]) return m[1].toLowerCase();
   if (trimmed.startsWith('@') && /^[a-zA-Z0-9_]{1,20}$/.test(trimmed.slice(1))) {
     return trimmed.slice(1).toLowerCase();

@@ -27,7 +27,8 @@ import { JamrPlusModal } from './components/JamrPlusModal';
 import { AuthModal } from './components/AuthModal';
 import { TvCastModal } from './components/TvCastModal';
 import { AvatarCropperModal } from './components/AvatarCropperModal';
-import { ActiveCheatEntry, loadActiveCheats, SecretCodesModal } from './components/SecretCodesModal';
+import { SecretCodesModal, ActiveCheatEntry, loadActiveCheats } from './components/SecretCodesModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
 import { FriendsAndNotificationsModal } from './components/FriendsAndNotificationsModal';
 import { RoomQrModal } from './components/RoomQrModal';
 import { CharacterReactionProvider } from './context/CharacterReactionContext';
@@ -46,6 +47,10 @@ import { getOrCreateSessionPlayerId } from './network/socketClient';
 import { apiFetchJson } from './utils/apiClient';
 import { loadLocalStoreSnapshot } from './utils/localFallbackStore';
 import { SoundFX } from './utils/soundFx';
+import {
+  extractAdminQrTokenFromPayload,
+  extractAdminUsernameFromQrPayload,
+} from './utils/qrHelper';
 import {
   DEFAULT_AVATAR_BG,
   DEFAULT_AVATAR_ID,
@@ -126,6 +131,7 @@ export default function App() {
     roomCode?: string;
   } | null>(null);
   const [showSecretCodesModal, setShowSecretCodesModal] = useState(false);
+  const [adminPanelToken, setAdminPanelToken] = useState<string | null>(null);
   const [showAvatarCropperModal, setShowAvatarCropperModal] = useState(false);
   const [showQrGeneratorModal, setShowQrGeneratorModal] = useState(false);
   const [friendsModalTab, setFriendsModalTab] = useState<'friends' | 'notifications' | null>(null);
@@ -221,6 +227,24 @@ export default function App() {
 
   useEffect(() => {
     void fetchCatalogData();
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchCatalogData();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    const catalogInterval = window.setInterval(() => {
+      void fetchCatalogData();
+    }, 15_000);
+
+    return () => {
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      clearInterval(catalogInterval);
+    };
   }, [fetchCatalogData]);
 
   // Sync user presence & pull unread notifications periodically when @username is registered
@@ -239,6 +263,7 @@ export default function App() {
         plusGlow: hasPlus ? plusStatus.glow : undefined,
         plusTitle: hasPlus ? plusStatus.profileTitle : undefined,
         plusFrame: hasPlus ? plusStatus.avatarFrame : undefined,
+        plusAnimation: hasPlus ? plusStatus.avatarAnimation : undefined,
       }),
     });
     const res = await apiFetchJson<{ ok?: boolean; notifications?: AppNotification[] }>(
@@ -308,9 +333,18 @@ export default function App() {
   }, []);
 
   const handleClaimAdminUsername = useCallback(
-    async (rawUname: string) => {
-      const cleanUname = rawUname.trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
-      if (!cleanUname) return;
+    async (
+      rawInput: string,
+      explicitQrToken?: string
+    ): Promise<{ ok: boolean; username?: string; error?: string }> => {
+      const resolvedToken = explicitQrToken || extractAdminQrTokenFromPayload(rawInput) || '';
+      const extractedHandle = extractAdminUsernameFromQrPayload(rawInput);
+      const fallbackClean = rawInput.trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+      const cleanUname = extractedHandle || (resolvedToken ? '' : fallbackClean);
+
+      if (!cleanUname && !resolvedToken) {
+        return { ok: false, error: 'رابط أو كود اليوزر نيم غير صالح.' };
+      }
 
       const res = await apiFetchJson<{
         ok?: boolean;
@@ -327,9 +361,10 @@ export default function App() {
         {
           method: 'POST',
           body: JSON.stringify({
-            username: cleanUname,
+            username: cleanUname || undefined,
+            qrToken: resolvedToken || undefined,
             playerId: getOrCreateSessionPlayerId(),
-            displayName: playerName || cleanUname,
+            displayName: playerName || cleanUname || 'لاعب جَمْر',
             avatar: playerAvatar,
             avatarBg: playerAvatarBg,
           }),
@@ -365,7 +400,8 @@ export default function App() {
           createdAt: Date.now(),
           read: false,
         });
-      } else if (res.isHtmlOrStatic || res.networkError) {
+        return { ok: true, username: u.username };
+      } else if ((res.isHtmlOrStatic || res.networkError) && cleanUname) {
         handleSaveUsername(cleanUname);
         SoundFX.playCorrect();
         handleIncomingNotification({
@@ -376,12 +412,14 @@ export default function App() {
           createdAt: Date.now(),
           read: false,
         });
+        return { ok: true, username: cleanUname };
       }
+      return { ok: false, error: String(res.data?.error || 'تعذر استلام اليوزر نيم من الإدارة.') };
     },
     [playerName, playerAvatar, playerAvatarBg, plusStatus, handleIncomingNotification]
   );
 
-  // URL invite / TV pair / admin username QR auto-detection (?room=, ?code=, ?tv=, ?assign_username=)
+  // URL invite / TV pair / admin username QR auto-detection (?room=, ?code=, ?tv=, ?assign_username=, ?claim_qr=)
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -401,9 +439,16 @@ export default function App() {
           initialPairTvCode: tvParam.replace(/[^A-Z0-9]/g, ''),
         });
       }
-      const assignUsernameParam = (params.get('assign_username') || '').trim();
-      if (assignUsernameParam) {
-        void handleClaimAdminUsername(assignUsernameParam);
+      const assignUsernameParam = (
+        params.get('assign_username') ||
+        params.get('claim_username') ||
+        params.get('admin_user') ||
+        params.get('u') ||
+        ''
+      ).trim();
+      const claimQrParam = (params.get('claim_qr') || params.get('qr_token') || '').trim();
+      if (assignUsernameParam || claimQrParam) {
+        void handleClaimAdminUsername(assignUsernameParam || claimQrParam, claimQrParam || undefined);
       }
     } catch {
       // ignore URL parsing errors
@@ -686,7 +731,7 @@ export default function App() {
               onOpenTvCast={(rc) =>
                 setTvCastState({ mode: 'tv_screen', roomCode: rc || activeRoomCode || undefined })
               }
-              onClaimAdminUsername={(uname) => void handleClaimAdminUsername(uname)}
+              onClaimAdminUsername={(uname, tok) => void handleClaimAdminUsername(uname, tok)}
               onPairTvCode={(tvCode) =>
                 setTvCastState({
                   mode: 'pair_from_phone',
@@ -697,6 +742,7 @@ export default function App() {
               onOpenFriendsInvite={() => setFriendsModalTab('friends')}
               onRoomCodeChange={setActiveRoomCode}
               onNotification={handleIncomingNotification}
+              onCatalogUpdated={() => void fetchCatalogData()}
               games={games}
               barrahCategories={barrahCategories}
               dubScenes={dubScenes}
@@ -819,16 +865,30 @@ export default function App() {
 
         {showSecretCodesModal && (
           <SecretCodesModal
-            onUnlockAdmin={(enteredCode) => {
-              const targetUrl = `${ADMIN_PORTAL_URL}/#code=${encodeURIComponent(enteredCode)}`;
-              try {
-                (window.top || window).location.href = targetUrl;
-              } catch {
-                window.location.href = targetUrl;
+            onUnlockAdmin={(enteredCode, token) => {
+              if (token) {
+                setShowSecretCodesModal(false);
+                setAdminPanelToken(token);
+              } else {
+                const targetUrl = `${ADMIN_PORTAL_URL}/#code=${encodeURIComponent(enteredCode)}`;
+                try {
+                  (window.top || window).location.href = targetUrl;
+                } catch {
+                  window.location.href = targetUrl;
+                }
               }
             }}
             onCheatActivated={(updated) => setActiveCheats(updated)}
             onClose={() => setShowSecretCodesModal(false)}
+          />
+        )}
+
+        {adminPanelToken && (
+          <AdminPanelModal
+            adminToken={adminPanelToken}
+            externalPortalUrl={ADMIN_PORTAL_URL}
+            onDataUpdated={() => void fetchCatalogData()}
+            onClose={() => setAdminPanelToken(null)}
           />
         )}
 
@@ -843,6 +903,7 @@ export default function App() {
             activeRoomCode={activeRoomCode}
             notifications={notifications}
             onUsernameSaved={handleSaveUsername}
+            onClaimAdminPayload={handleClaimAdminUsername}
             onNotificationsChange={setNotifications}
             onJoinRoomDirect={handleJoinRoomDirect}
             onOpenPlusOffer={(reason) => {

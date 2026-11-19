@@ -136,6 +136,7 @@ export interface JamrPlusStatus {
   glow: PlusGlowConfig;
   profileTitle?: string;
   avatarFrame?: 'none' | 'gold_crown' | 'flame_ring' | 'diamond_halo' | 'obsidian_royal';
+  avatarAnimation?: string;
   reactionStyle?: 'confetti' | 'fireworks' | 'stars';
   soundPack?: 'classic' | 'royal_brass';
   heroParticles?: boolean;
@@ -182,6 +183,7 @@ export interface Player {
   plusGlow?: PlusGlowConfig;
   plusTitle?: string;
   plusFrame?: string;
+  plusAnimation?: string;
 }
 
 export interface ChatMessage {
@@ -193,6 +195,7 @@ export interface ChatMessage {
   senderIsPlus?: boolean;
   senderPlusGlow?: PlusGlowConfig;
   senderGlow?: PlusGlowConfig;
+  senderAnimation?: string;
   text: string;
   timestamp: number;
   isSystem?: boolean;
@@ -444,6 +447,7 @@ export interface UserRecord {
   plusGlow?: PlusGlowConfig;
   plusTitle?: string;
   plusFrame?: string;
+  plusAnimation?: string;
   accountEmail?: string;
   lastSeen: number;
   currentRoomCode?: string | null;
@@ -480,6 +484,22 @@ export interface AdminProvisionedUser {
   claimedByPlayerId?: string;
 }
 
+export interface ReservedUsernameRecord {
+  id: string;
+  username: string;
+  tier?: 'standard' | 'vip' | 'brand';
+  status: 'reserved' | 'claimed';
+  allowJamrPlus?: boolean;
+  note?: string;
+  qrToken?: string;
+  qrExpiresAt?: string;
+  claimedByPlayerId?: string;
+  claimedByDisplayName?: string;
+  claimedVia?: 'qr' | 'plus' | 'admin';
+  claimedAt?: string;
+  createdAt: string;
+}
+
 export interface DataStoreSnapshot {
   sections: Section[];
   topics: Topic[];
@@ -493,4 +513,10 @@ export interface DataStoreSnapshot {
   users?: Record<string, UserRecord>;
   accounts?: Record<string, AccountRecord>;
   pendingAdminUsernames?: Record<string, AdminProvisionedUser>;
+  reservedUsernames?: ReservedUsernameRecord[];
+  bridgeConfig?: {
+    mainGameUrl?: string;
+    bridgeKey?: string;
+    totalBridgeRequests?: number;
+  };
 }

@@ -59,11 +59,12 @@ interface OnlineGameViewProps {
   onOpenAvatarCropper?: () => void;
   onOpenPlusModal?: () => void;
   onOpenTvCast?: (roomCode?: string) => void;
-  onClaimAdminUsername?: (username: string) => void;
+  onClaimAdminUsername?: (usernameOrToken: string, qrToken?: string) => void;
   onPairTvCode?: (tvCode: string) => void;
   onOpenFriendsInvite?: () => void;
   onRoomCodeChange?: (code: string | null) => void;
   onNotification?: (notif: AppNotification) => void;
+  onCatalogUpdated?: () => void;
   games: GameConfig[];
   barrahCategories: BarrahCategory[];
   dubScenes?: DubMicScene[];
@@ -92,6 +93,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
   onOpenFriendsInvite,
   onRoomCodeChange,
   onNotification,
+  onCatalogUpdated,
   games,
   barrahCategories,
   dubScenes,
@@ -182,6 +184,9 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       onNotification: (notif) => {
         onNotification?.(notif);
       },
+      onCatalogUpdated: () => {
+        onCatalogUpdated?.();
+      },
     });
     client.setCategories(barrahCategories);
     if (username) client.bindUser(username);
@@ -238,6 +243,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       playerName: cleanName,
       avatar,
       avatarBg,
+      isPlus: hasPlus,
+      plusGlow: hasPlus ? plusStatus.glow : undefined,
+      plusTitle: hasPlus ? plusStatus.profileTitle : undefined,
+      plusFrame: hasPlus ? plusStatus.avatarFrame : undefined,
+      plusAnimation: hasPlus ? plusStatus.avatarAnimation : undefined,
     });
   }, [initialRoomCode, playerName, avatar, avatarBg, room]);
 
@@ -301,6 +311,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       totalRounds: ismRounds,
       isJudgeRoom: selectedGameId === 'ism_hayawan' ? isJudgeRoom : false,
       selectedCaseId: selectedGameId === 'smart_detective' ? selectedDetectiveCaseId : undefined,
+      isPlus: hasPlus,
+      plusGlow: hasPlus ? plusStatus.glow : undefined,
+      plusTitle: hasPlus ? plusStatus.profileTitle : undefined,
+      plusFrame: hasPlus ? plusStatus.avatarFrame : undefined,
+      plusAnimation: hasPlus ? plusStatus.avatarAnimation : undefined,
     });
     setIsBusy(false);
   };
@@ -322,6 +337,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
       playerName: cleanName,
       avatar,
       avatarBg,
+      isPlus: hasPlus,
+      plusGlow: hasPlus ? plusStatus.glow : undefined,
+      plusTitle: hasPlus ? plusStatus.profileTitle : undefined,
+      plusFrame: hasPlus ? plusStatus.avatarFrame : undefined,
+      plusAnimation: hasPlus ? plusStatus.avatarAnimation : undefined,
     });
     setIsBusy(false);
   };
@@ -501,6 +521,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                         size={24}
                         isPlus={msgIsPlus}
                         plusGlow={msgGlow}
+                        plusAnimation={m.senderAnimation || senderPlayer?.plusAnimation}
                         interactive={false}
                       />
                     )}
@@ -772,6 +793,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                         isPlus={p.isPlus}
                         plusGlow={p.plusGlow}
                         plusFrame={p.plusFrame}
+                        plusAnimation={p.plusAnimation}
                         interactive={false}
                       />
                       <div className="truncate">
@@ -862,6 +884,7 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                         size={28}
                         isPlus={msgIsPlus}
                         plusGlow={msgGlow}
+                        plusAnimation={m.senderAnimation || senderPlayer?.plusAnimation}
                         interactive={false}
                       />
                     )}
@@ -1226,9 +1249,9 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
             setShowQrScannerModal(false);
             onPairTvCode?.(tvCode);
           }}
-          onScannedAdminUsername={(adminUser) => {
+          onScannedAdminUsername={(adminUser, qrToken) => {
             setShowQrScannerModal(false);
-            onClaimAdminUsername?.(adminUser);
+            onClaimAdminUsername?.(adminUser, qrToken);
           }}
           onScannedRoomCode={(scannedCode) => {
             setShowQrScannerModal(false);
@@ -1242,6 +1265,11 @@ export const OnlineGameView: React.FC<OnlineGameViewProps> = ({
                 playerName: cleanName,
                 avatar,
                 avatarBg,
+                isPlus: hasPlus,
+                plusGlow: hasPlus ? plusStatus.glow : undefined,
+                plusTitle: hasPlus ? plusStatus.profileTitle : undefined,
+                plusFrame: hasPlus ? plusStatus.avatarFrame : undefined,
+                plusAnimation: hasPlus ? plusStatus.avatarAnimation : undefined,
               })
               .finally(() => setIsBusy(false));
           }}

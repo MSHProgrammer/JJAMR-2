@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { Camera, ImagePlus, X, AlertCircle, ScanLine } from 'lucide-react';
 import {
+  extractAdminQrTokenFromPayload,
   extractAdminUsernameFromQrPayload,
   extractRoomCodeFromQrPayload,
   extractTvCodeFromQrPayload,
@@ -10,7 +11,7 @@ import { SoundFX } from '../utils/soundFx';
 
 interface QrScannerModalProps {
   onScannedRoomCode: (roomCode: string) => void;
-  onScannedAdminUsername?: (username: string) => void;
+  onScannedAdminUsername?: (usernameOrToken: string, qrToken?: string) => void;
   onScannedTvCode?: (tvCode: string) => void;
   onClose: () => void;
 }
@@ -94,11 +95,12 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 onScannedTvCode(tvCode);
                 return;
               }
+              const adminToken = extractAdminQrTokenFromPayload(decoded.data);
               const adminUser = extractAdminUsernameFromQrPayload(decoded.data);
-              if (adminUser && onScannedAdminUsername) {
+              if ((adminUser || adminToken) && onScannedAdminUsername) {
                 SoundFX.playCorrect();
                 stopCamera();
-                onScannedAdminUsername(adminUser);
+                onScannedAdminUsername(adminUser || adminToken || '', adminToken || undefined);
                 return;
               }
               const roomCode = extractRoomCodeFromQrPayload(decoded.data);
@@ -147,11 +149,12 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             onScannedTvCode(tvCode);
             return;
           }
+          const adminToken = extractAdminQrTokenFromPayload(decoded.data);
           const adminUser = extractAdminUsernameFromQrPayload(decoded.data);
-          if (adminUser && onScannedAdminUsername) {
+          if ((adminUser || adminToken) && onScannedAdminUsername) {
             SoundFX.playCorrect();
             stopCamera();
-            onScannedAdminUsername(adminUser);
+            onScannedAdminUsername(adminUser || adminToken || '', adminToken || undefined);
             return;
           }
           const roomCode = extractRoomCodeFromQrPayload(decoded.data);

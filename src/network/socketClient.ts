@@ -1,4 +1,4 @@
-import { AppNotification, BarrahCategory, RoomState } from '../types/jamr';
+import { AppNotification, BarrahCategory, JamrPlusStatus, PlusGlowConfig, RoomState } from '../types/jamr';
 import { LocalRoomCoordinator } from './LocalRoomCoordinator';
 import { isPlusActive, loadPlusStatus } from '../utils/plusManager';
 
@@ -11,6 +11,7 @@ export interface SocketCallbacks {
   onKicked: () => void;
   onVoiceSignal?: (payload: Record<string, unknown>) => void;
   onNotification?: (notif: AppNotification, targetUsername?: string) => void;
+  onCatalogUpdated?: () => void;
 }
 
 const STATIC_HOST_SUFFIXES = ['pages.dev', 'netlify.app', 'github.io'];
@@ -293,6 +294,7 @@ export class JamrSocketClient {
         plusGlow: plusOk ? plusNow.glow : undefined,
         plusTitle: plusOk ? plusNow.profileTitle : undefined,
         plusFrame: plusOk ? plusNow.avatarFrame : undefined,
+        plusAnimation: plusOk ? plusNow.avatarAnimation : undefined,
       });
     } else {
       this.startFallbackPoll();
@@ -326,6 +328,8 @@ export class JamrSocketClient {
         data.notification as AppNotification,
         typeof data.targetUsername === 'string' ? data.targetUsername : undefined
       );
+    } else if (type === 'catalog_updated') {
+      this.callbacks.onCatalogUpdated?.();
     }
   }
 
@@ -403,18 +407,24 @@ export class JamrSocketClient {
     totalRounds?: number;
     isJudgeRoom?: boolean;
     selectedCaseId?: string;
+    isPlus?: boolean;
+    plusGlow?: PlusGlowConfig;
+    plusTitle?: string;
+    plusFrame?: JamrPlusStatus['avatarFrame'];
+    plusAnimation?: string;
   }) {
     this.lastKnownName = params.playerName;
     this.lastKnownAvatar = params.avatar;
     this.lastKnownAvatarBg = params.avatarBg || 'lavender';
     const plusNow = loadPlusStatus();
-    const plusOk = isPlusActive(plusNow);
+    const plusOk = params.isPlus ?? isPlusActive(plusNow);
     const enrichedParams = {
       ...params,
       isPlus: plusOk,
-      plusGlow: plusOk ? plusNow.glow : undefined,
-      plusTitle: plusOk ? plusNow.profileTitle : undefined,
-      plusFrame: plusOk ? plusNow.avatarFrame : undefined,
+      plusGlow: plusOk ? (params.plusGlow ?? plusNow.glow) : undefined,
+      plusTitle: plusOk ? (params.plusTitle ?? plusNow.profileTitle) : undefined,
+      plusFrame: plusOk ? (params.plusFrame ?? plusNow.avatarFrame) : undefined,
+      plusAnimation: plusOk ? (params.plusAnimation ?? plusNow.avatarAnimation) : undefined,
     };
 
     if (this.shouldForceP2P()) {
@@ -464,13 +474,22 @@ export class JamrSocketClient {
     avatar: string;
     avatarBg?: string;
     silentNotFound?: boolean;
+    isPlus?: boolean;
+    plusGlow?: PlusGlowConfig;
+    plusTitle?: string;
+    plusFrame?: JamrPlusStatus['avatarFrame'];
+    plusAnimation?: string;
   }) {
     const cleanCode = params.roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     this.lastKnownName = params.playerName;
     this.lastKnownAvatar = params.avatar;
     this.lastKnownAvatarBg = params.avatarBg || 'lavender';
     const plusNow = loadPlusStatus();
-    const plusOk = isPlusActive(plusNow);
+    const plusOk = params.isPlus ?? isPlusActive(plusNow);
+    const resolvedGlow = plusOk ? (params.plusGlow ?? plusNow.glow) : undefined;
+    const resolvedTitle = plusOk ? (params.plusTitle ?? plusNow.profileTitle) : undefined;
+    const resolvedFrame = plusOk ? (params.plusFrame ?? plusNow.avatarFrame) : undefined;
+    const resolvedAnimation = plusOk ? (params.plusAnimation ?? plusNow.avatarAnimation) : undefined;
 
     if (this.shouldForceP2P()) {
       this.activateP2P();
@@ -495,9 +514,10 @@ export class JamrSocketClient {
           avatar: params.avatar,
           avatarBg: params.avatarBg,
           isPlus: plusOk,
-          plusGlow: plusOk ? plusNow.glow : undefined,
-          plusTitle: plusOk ? plusNow.profileTitle : undefined,
-          plusFrame: plusOk ? plusNow.avatarFrame : undefined,
+          plusGlow: resolvedGlow,
+          plusTitle: resolvedTitle,
+          plusFrame: resolvedFrame,
+          plusAnimation: resolvedAnimation,
         }),
       });
 
@@ -527,9 +547,10 @@ export class JamrSocketClient {
         avatar: params.avatar,
         avatarBg: params.avatarBg,
         isPlus: plusOk,
-        plusGlow: plusOk ? plusNow.glow : undefined,
-        plusTitle: plusOk ? plusNow.profileTitle : undefined,
-        plusFrame: plusOk ? plusNow.avatarFrame : undefined,
+        plusGlow: resolvedGlow,
+        plusTitle: resolvedTitle,
+        plusFrame: resolvedFrame,
+        plusAnimation: resolvedAnimation,
       })
     ) {
       return;

@@ -21,12 +21,19 @@ import { getOrCreateSessionPlayerId } from '../network/socketClient';
 import { apiFetchJson } from '../utils/apiClient';
 import { LOCAL_USER_KEY } from '../utils/localFallbackStore';
 import { isPlusActive } from '../utils/plusManager';
+import {
+  extractAdminQrTokenFromPayload,
+  extractAdminUsernameFromQrPayload,
+} from '../utils/qrHelper';
 
 export interface FriendSummary {
   username: string;
   displayName: string;
   avatar: string;
   avatarBg?: string;
+  isPlus?: boolean;
+  plusGlow?: JamrPlusStatus['glow'];
+  plusAnimation?: string;
   isOnline: boolean;
   roomCode: string | null;
   gameId: string | null;
@@ -43,6 +50,7 @@ interface FriendsAndNotificationsModalProps {
   activeRoomCode?: string | null;
   notifications: AppNotification[];
   onUsernameSaved: (username: string) => void;
+  onClaimAdminPayload?: (rawOrUrl: string, token?: string) => Promise<{ ok: boolean; username?: string; error?: string }>;
   onNotificationsChange: (notifications: AppNotification[]) => void;
   onJoinRoomDirect: (roomCode: string) => void;
   onOpenPlusOffer?: (reason?: string) => void;
@@ -59,6 +67,7 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
   activeRoomCode,
   notifications,
   onUsernameSaved,
+  onClaimAdminPayload,
   onNotificationsChange,
   onJoinRoomDirect,
   onOpenPlusOffer,
@@ -82,9 +91,11 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
   const [registered, setRegistered] = useState(Boolean(username));
   const [offlineNotice, setOfflineNotice] = useState(false);
 
+  const hasPlus = isPlusActive(plusStatus);
+
   const fetchFriendsState = async (targetUser: string) => {
     if (!targetUser) return;
-    const res = await apiFetchJson<{
+    let res = await apiFetchJson<{
       ok?: boolean;
       registered?: boolean;
       friends?: FriendSummary[];
@@ -93,9 +104,29 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
       notifications?: AppNotification[];
     }>(`/api/friends/state?username=${encodeURIComponent(targetUser)}`);
 
+    if (res.ok && res.data?.ok && !res.data.registered) {
+      // Auto-hydrate user presence on server if client already has a saved username
+      await apiFetchJson('/api/users/sync-presence', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: targetUser,
+          playerId: getOrCreateSessionPlayerId(),
+          displayName: displayName || 'لاعب جَمْر',
+          avatar,
+          avatarBg,
+          isPlus: hasPlus,
+          plusGlow: hasPlus ? plusStatus?.glow : undefined,
+          plusTitle: hasPlus ? plusStatus?.profileTitle : undefined,
+          plusFrame: hasPlus ? plusStatus?.avatarFrame : undefined,
+          plusAnimation: hasPlus ? plusStatus?.avatarAnimation : undefined,
+        }),
+      });
+      res = await apiFetchJson(`/api/friends/state?username=${encodeURIComponent(targetUser)}`);
+    }
+
     if (res.ok && res.data?.ok) {
       setOfflineNotice(false);
-      setRegistered(Boolean(res.data.registered));
+      setRegistered(Boolean(res.data.registered || targetUser));
       setFriends(Array.isArray(res.data.friends) ? res.data.friends : []);
       setIncoming(Array.isArray(res.data.incomingRequests) ? res.data.incomingRequests : []);
       setOutgoing(Array.isArray(res.data.outgoingRequests) ? res.data.outgoingRequests : []);
@@ -109,23 +140,66 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
 
   useEffect(() => {
     if (username) {
+      setHandleInput(username);
+      setRegistered(true);
       void fetchFriendsState(username);
     }
-  }, [username]);
+  }, [username]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRegisterUsername = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleaned = handleInput.trim().replace(/^@+/, '').toLowerCase();
-    if (!/^[a-z0-9_]{1,20}$/.test(cleaned)) {
-      setHandleError('اكتب يوزر نيم باللغة الإنجليزية (أحرف/أرقام/شرطة سفلية فقط، 1–20 خانة).');
-      return;
+  const registerOrClaimHandle = async (rawValue: string): Promise<{ ok: boolean; username?: string; error?: string }> => {
+    const rawTrimmed = rawValue.trim();
+    const detectedToken = extractAdminQrTokenFromPayload(rawTrimmed);
+    const detectedUrlUser = extractAdminUsernameFromQrPayload(rawTrimmed);
+
+    // If pasted an Admin QR link, ?claim_qr=..., ?assign_username=..., or jqr_... token
+    if (detectedToken || (rawTrimmed.includes('http') || rawTrimmed.includes('=')) && detectedUrlUser) {
+      if (onClaimAdminPayload) {
+        const claimed = await onClaimAdminPayload(detectedUrlUser || rawTrimmed, detectedToken || undefined);
+        if (claimed.ok && claimed.username) {
+          setHandleInput(claimed.username);
+          setRegistered(true);
+          setHandleSuccess(`تم استلام وتفعيل اليوزر نيم الإداري: @${claimed.username} 🎉`);
+          void fetchFriendsState(claimed.username);
+          return { ok: true, username: claimed.username };
+        }
+        return { ok: false, error: claimed.error || 'تعذر التحقق من رابط/كود الإدارة.' };
+      }
+
+      const claimRes = await apiFetchJson<{ ok?: boolean; error?: string; user?: { username: string } }>(
+        '/api/users/claim-admin-qr',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            username: detectedUrlUser || rawTrimmed,
+            qrToken: detectedToken || undefined,
+            playerId: getOrCreateSessionPlayerId(),
+            displayName: displayName || 'لاعب جَمْر',
+            avatar,
+            avatarBg,
+          }),
+        },
+        { unlockStorageOnGesture: true }
+      );
+      if (claimRes.ok && claimRes.data?.ok && claimRes.data.user) {
+        const uname = claimRes.data.user.username;
+        onUsernameSaved(uname);
+        setHandleInput(uname);
+        setRegistered(true);
+        setHandleSuccess(`تم تفعيل اليوزر نيم الإداري: @${uname} 🎉`);
+        void fetchFriendsState(uname);
+        return { ok: true, username: uname };
+      }
+      return { ok: false, error: String(claimRes.data?.error || 'رابط أو كود الإدارة غير صالح.') };
     }
-    setRegistering(true);
-    setHandleError('');
-    setHandleSuccess('');
-    setOfflineNotice(false);
 
-    const hasPlus = isPlusActive(plusStatus);
+    const cleaned = rawTrimmed.replace(/^@+/, '').toLowerCase();
+    if (!/^[a-z0-9_]{1,20}$/.test(cleaned)) {
+      return {
+        ok: false,
+        error: 'اكتب يوزر نيم إنجليزي (1–20 خانة من a-z و 0-9 و _) أو الصق رابط/كود QR من الإدارة.',
+      };
+    }
+
     const res = await apiFetchJson<{ ok?: boolean; error?: string }>(
       '/api/users/register',
       {
@@ -140,31 +214,28 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
           plusGlow: hasPlus ? plusStatus?.glow : undefined,
           plusTitle: hasPlus ? plusStatus?.profileTitle : undefined,
           plusFrame: hasPlus ? plusStatus?.avatarFrame : undefined,
+          plusAnimation: hasPlus ? plusStatus?.avatarAnimation : undefined,
         }),
       },
       { unlockStorageOnGesture: true }
     );
 
-    setRegistering(false);
-
     if (!res.isHtmlOrStatic && !res.networkError && res.data) {
       if (!res.ok || !res.data.ok) {
-        SoundFX.playWrong();
-        setHandleError(String(res.data.error || 'تعذر حجز اليوزر نيم.'));
-        return;
+        return { ok: false, error: String(res.data.error || 'تعذر حجز اليوزر نيم.') };
       }
-      SoundFX.playCorrect();
       onUsernameSaved(cleaned);
+      setHandleInput(cleaned);
       setRegistered(true);
       setHandleSuccess(`تم توثيق اليوزر نيم الفريد الخاص بك: @${cleaned} 🎉`);
       void fetchFriendsState(cleaned);
       if (cleaned.length >= 1 && cleaned.length <= 10 && !hasPlus && onOpenPlusOffer) {
         onOpenPlusOffer(`يوزرك القصير المميز @${cleaned} (${cleaned.length} خانات) يؤهلك لعرض جَمْر بلس الحصري (٢ ريال فقط / سنة كاملة)! 👑`);
       }
-      return;
+      return { ok: true, username: cleaned };
     }
 
-    // Save locally if static/cookie-blocked iframe prevents POST /api/users/register
+    // Local fallback when running without live backend
     try {
       window.localStorage.setItem(
         LOCAL_USER_KEY,
@@ -173,37 +244,80 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
     } catch {
       // ignore
     }
-    SoundFX.playCorrect();
     onUsernameSaved(cleaned);
+    setHandleInput(cleaned);
     setRegistered(true);
     setOfflineNotice(true);
-    setHandleSuccess(
-      `تم حفظ اليوزر نيم @${cleaned} محلياً! لمزامنة الأصدقاء أونلاين افتح المنصة في تبويب مستقل.`
-    );
-    if (cleaned.length >= 1 && cleaned.length <= 10 && !hasPlus && onOpenPlusOffer) {
-      onOpenPlusOffer(`يوزرك القصير المميز @${cleaned} يؤهلك لاشتراك جَمْر بلس (٢ ريال فقط / سنة)! 👑`);
+    setHandleSuccess(`تم حفظ اليوزر نيم @${cleaned} محلياً! لمزامنة الأصدقاء افتح المنصة بالخادم الكامل.`);
+    return { ok: true, username: cleaned };
+  };
+
+  const handleRegisterUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegistering(true);
+    setHandleError('');
+    setHandleSuccess('');
+    setOfflineNotice(false);
+
+    const outcome = await registerOrClaimHandle(handleInput);
+    setRegistering(false);
+
+    if (!outcome.ok) {
+      SoundFX.playWrong();
+      setHandleError(outcome.error || 'تعذر حفظ اليوزر نيم.');
+    } else {
+      SoundFX.playCorrect();
     }
   };
 
   const sendFriendRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !registered) {
-      setFriendMsg({ ok: false, text: 'يجب إنشاء يوزر نيم فريد خاص بك أولاً قبل إضافة الأصدقاء!' });
-      return;
-    }
-    const target = searchUsername.trim().replace(/^@+/, '').toLowerCase();
-    if (!target) {
-      setFriendMsg({ ok: false, text: 'اكتب اليوزر نيم الدقيق للشخص الذي تريد إضافته.' });
-      return;
-    }
-    setLoadingAction(true);
     setFriendMsg(null);
+    setHandleError('');
 
-    const res = await apiFetchJson<{ ok?: boolean; message?: string; error?: string }>(
+    const target = searchUsername.trim().replace(/^@+/, '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!target) {
+      setFriendMsg({ ok: false, text: 'اكتب اليوزر نيم الخاص بالصديق أولاً.' });
+      return;
+    }
+
+    setLoadingAction(true);
+
+    // Same-page seamless registration: if user hasn't clicked "Save" yet or changed handleInput, register automatically right from this same button click!
+    let myHandle = username;
+    if (!myHandle) {
+      const candidate = handleInput.trim();
+      if (!candidate) {
+        setLoadingAction(false);
+        SoundFX.playWrong();
+        setFriendMsg({ ok: false, text: 'اكتب لك يوزر نيم في الخانة أعلاه ثم اضغط نفس الزر للإضافة فوراً!' });
+        return;
+      }
+      const regOutcome = await registerOrClaimHandle(candidate);
+      if (!regOutcome.ok || !regOutcome.username) {
+        setLoadingAction(false);
+        SoundFX.playWrong();
+        setFriendMsg({ ok: false, text: regOutcome.error || 'اكتب يوزر نيم إنجليزي صحيح في الخانة أعلاه.' });
+        return;
+      }
+      myHandle = regOutcome.username;
+    }
+
+    const res = await apiFetchJson<{ ok?: boolean; acceptedDirectly?: boolean; message?: string; error?: string }>(
       '/api/friends/request',
       {
         method: 'POST',
-        body: JSON.stringify({ fromUsername: username, targetUsername: target }),
+        body: JSON.stringify({
+          fromUsername: myHandle,
+          targetUsername: target,
+          fromPlayerId: getOrCreateSessionPlayerId(),
+          fromDisplayName: displayName || 'لاعب جَمْر',
+          fromAvatar: avatar,
+          fromAvatarBg: avatarBg,
+          fromIsPlus: hasPlus,
+          fromPlusGlow: hasPlus ? plusStatus?.glow : undefined,
+          fromPlusAnimation: hasPlus ? plusStatus?.avatarAnimation : undefined,
+        }),
       },
       { unlockStorageOnGesture: true }
     );
@@ -226,13 +340,14 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
     } else {
       SoundFX.playCorrect();
       setSearchUsername('');
-      setFriendMsg({ ok: true, text: String(res.data.message) });
-      void fetchFriendsState(username);
+      setFriendMsg({ ok: true, text: String(res.data.message || `تم إرسال طلب الصداقة إلى @${target}`) });
+      void fetchFriendsState(myHandle);
     }
   };
 
   const respondRequest = async (fromUser: string, accept: boolean) => {
-    if (!username || !registered) {
+    const activeUser = username || handleInput.trim().replace(/^@+/, '').toLowerCase();
+    if (!activeUser) {
       setFriendMsg({ ok: false, text: 'أنشئ يوزر نيم خاص بك أولاً لقبول الطلبات!' });
       return;
     }
@@ -240,12 +355,12 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
       '/api/friends/respond',
       {
         method: 'POST',
-        body: JSON.stringify({ username, fromUsername: fromUser, accept }),
+        body: JSON.stringify({ username: activeUser, fromUsername: fromUser, accept }),
       },
       { unlockStorageOnGesture: true }
     );
     SoundFX.playClick();
-    void fetchFriendsState(username);
+    void fetchFriendsState(activeUser);
   };
 
   const inviteFriendToRoom = async (targetUser: string) => {
@@ -399,30 +514,35 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
             </div>
 
             {!registered && (
-              <form onSubmit={handleRegisterUsername} className="flex flex-col sm:flex-row gap-2">
-                <div className="relative flex-1">
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono font-black text-orange-500">
-                    @
-                  </span>
-                  <input
-                    type="text"
-                    value={handleInput}
-                    onChange={(e) => {
-                      setHandleInput(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase());
-                      setHandleError('');
-                    }}
-                    placeholder="مثال: abu_fahad99"
-                    dir="ltr"
-                    className="w-full rounded-xl bg-white border border-amber-200 pr-8 pl-3 py-2 text-sm font-mono font-bold text-[#23140E]"
-                  />
+              <form onSubmit={handleRegisterUsername} className="space-y-2">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono font-black text-orange-500">
+                      @
+                    </span>
+                    <input
+                      type="text"
+                      value={handleInput}
+                      onChange={(e) => {
+                        setHandleInput(e.target.value.replace(/\s+/g, ''));
+                        setHandleError('');
+                      }}
+                      placeholder="اكتب يوزرك (abu_fahad) أو الصق رابط/كود الإدارة"
+                      dir="ltr"
+                      className="w-full rounded-xl bg-white border border-amber-200 pr-8 pl-3 py-2 text-sm font-mono font-bold text-[#23140E]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={registering}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white font-black text-xs cursor-pointer shrink-0 disabled:opacity-50"
+                  >
+                    {registering ? 'جاري التحقق...' : 'حجز وتفعيل اليوزر نيم'}
+                  </button>
                 </div>
-                <button
-                  type="submit"
-                  disabled={registering}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 text-white font-black text-xs cursor-pointer shrink-0 disabled:opacity-50"
-                >
-                  {registering ? 'جاري التحقق...' : 'حجز وتفعيل اليوزر نيم'}
-                </button>
+                <div className="text-[10px] font-bold text-[#7C5D4F]">
+                  💡 تقدر تكتب يوزرك مباشرة أو تلصق رابط/كود الاستلام القادم من الإدارة لاستلام اليوزر فوراً.
+                </div>
               </form>
             )}
             {handleError && <p className="text-xs font-bold text-rose-700">{handleError}</p>}
@@ -468,15 +588,13 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
 
           {tab === 'friends' ? (
             <>
-              {/* Add Friend strictly by @username */}
+              {/* Add Friend strictly by @username from the exact same page & button */}
               <form
                 onSubmit={sendFriendRequest}
-                className={`rounded-2xl bg-white border border-amber-200 p-4 space-y-2.5 ${
-                  !registered ? 'opacity-60' : ''
-                }`}
+                className="rounded-2xl bg-white border-2 border-amber-200 p-4 space-y-2.5"
               >
                 <label className="block text-xs font-black text-[#23140E]">
-                  إضافة صديق (بالبحث عن اليوزر نيم الفريد فقط):
+                  إضافة صديق (بالبحث عن اليوزر نيم الفريد من نفس الصفحة):
                 </label>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <div className="relative flex-1">
@@ -485,25 +603,22 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
                     </span>
                     <input
                       type="text"
-                      disabled={!registered}
                       value={searchUsername}
                       onChange={(e) =>
-                        setSearchUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())
+                        setSearchUsername(e.target.value.replace(/[^a-zA-Z0-9_@]/g, '').replace(/^@+/, '').toLowerCase())
                       }
-                      placeholder={
-                        registered ? 'أدخل يوزر نيم الصديق...' : 'أنشئ يوزر نيمك أولاً أعلاه'
-                      }
+                      placeholder="أدخل يوزر نيم الصديق..."
                       dir="ltr"
                       className="w-full rounded-xl bg-[#FFF8EE] border border-amber-200 pr-8 pl-3 py-2 text-sm font-mono font-bold text-[#23140E]"
                     />
                   </div>
                   <button
                     type="submit"
-                    disabled={loadingAction || !registered}
-                    className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    disabled={loadingAction}
+                    className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     <UserPlus className="w-4 h-4" />
-                    <span>إرسال طلب صداقة</span>
+                    <span>{loadingAction ? 'جاري الإضافة...' : 'إضافة صديق الآن'}</span>
                   </button>
                 </div>
                 {friendMsg && (
@@ -607,6 +722,9 @@ export const FriendsAndNotificationsModal: React.FC<FriendsAndNotificationsModal
                                 avatarId={fr.avatar}
                                 backgroundColor={fr.avatarBg}
                                 size={40}
+                                isPlus={fr.isPlus}
+                                plusGlow={fr.plusGlow}
+                                plusAnimation={fr.plusAnimation}
                                 interactive={false}
                               />
                               <span

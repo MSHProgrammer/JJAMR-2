@@ -153,6 +153,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   isPlus={hasPlus}
                   plusGlow={hasPlus ? plusStatus.glow : undefined}
                   plusFrame={hasPlus ? plusStatus.avatarFrame : undefined}
+                  plusAnimation={hasPlus ? plusStatus.avatarAnimation : undefined}
                 />
               </button>
               <div className="space-y-1 min-w-0">

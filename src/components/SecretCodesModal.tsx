@@ -43,7 +43,7 @@ export function saveActiveCheats(list: ActiveCheatEntry[]): void {
 }
 
 interface SecretCodesModalProps {
-  onUnlockAdmin: (enteredCode: string) => void;
+  onUnlockAdmin: (enteredCode: string, adminToken?: string) => void;
   onCheatActivated?: (cheats: ActiveCheatEntry[]) => void;
   onClose: () => void;
 }
@@ -57,6 +57,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [portalRedirectUrl, setPortalRedirectUrl] = useState('');
+  const [verifiedAdminToken, setVerifiedAdminToken] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [activeCheats, setActiveCheats] = useState<ActiveCheatEntry[]>(() => loadActiveCheats());
 
@@ -88,7 +89,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     setCode('');
   };
 
-  const redirectToAdminPortal = (enteredCode: string) => {
+  const unlockAdminPortal = (enteredCode: string, token = '') => {
     const cleanCode = enteredCode.trim();
     if (cleanCode !== ADMIN_SECRET_PASS) {
       SoundFX.playWrong();
@@ -98,9 +99,9 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     SoundFX.playCorrect();
     const targetUrl = buildAdminPortalUrl(cleanCode);
     setPortalRedirectUrl(targetUrl);
+    setVerifiedAdminToken(token);
     setError('');
-    setSuccessMsg('تم التحقق من الرمز! يمكنك الآن فتح موقع الإدارة.');
-    onUnlockAdmin(cleanCode);
+    setSuccessMsg('تم التحقق من رمز الإدارة! اختر لوحة الإدارة المباشرة لتصل تعديلاتك للموقع فوراً.');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -113,6 +114,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
     setLoading(true);
     setError('');
     setPortalRedirectUrl('');
+    setVerifiedAdminToken('');
     setSuccessMsg('');
 
     const result = await apiFetchJson<{
@@ -143,7 +145,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
       }
 
       if (json.kind === 'admin' && trimmed === ADMIN_SECRET_PASS) {
-        redirectToAdminPortal(trimmed);
+        unlockAdminPortal(trimmed, String(json.token || ''));
         return;
       }
 
@@ -161,7 +163,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
 
     // Exact 1100321 Admin pass fallback when server unreachable in static/iframe mode
     if (trimmed === ADMIN_SECRET_PASS) {
-      redirectToAdminPortal(trimmed);
+      unlockAdminPortal(trimmed, '');
       return;
     }
 
@@ -229,6 +231,7 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
                 setCode(e.target.value);
                 setError('');
                 setPortalRedirectUrl('');
+                setVerifiedAdminToken('');
               }}
               placeholder="اكتب الكود هنا..."
               className="w-full rounded-xl bg-[#FFF8EE] border-2 border-amber-200 px-4 py-3 text-center text-base font-black tracking-wider text-[#23140E] focus:outline-none focus:border-orange-500"
@@ -240,18 +243,26 @@ export const SecretCodesModal: React.FC<SecretCodesModalProps> = ({
               </div>
             )}
 
-            {/* Strict requirement: Admin portal button ONLY renders when exact password 1100321 was verified */}
+            {/* Strict requirement: Admin portal controls ONLY render when exact password 1100321 was verified */}
             {portalRedirectUrl && code.trim() === ADMIN_SECRET_PASS && (
-              <div className="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-3 text-xs font-bold text-amber-950 text-center space-y-2">
-                <div>افتح موقع الإدارة المستقل الآن:</div>
+              <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 px-3.5 py-3 text-xs font-bold text-amber-950 text-center space-y-2.5">
+                {verifiedAdminToken && (
+                  <button
+                    type="button"
+                    onClick={() => onUnlockAdmin(code.trim(), verifiedAdminToken)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-l from-[#1C140A] to-[#2B1B0E] border border-amber-400 text-amber-300 font-black text-xs inline-flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <span>فتح لوحة الإدارة المتصلة مباشرة بالموقع ⚡</span>
+                  </button>
+                )}
                 <a
                   href={portalRedirectUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-l from-orange-500 to-amber-500 hover:brightness-105 text-white font-black text-xs inline-flex items-center justify-center gap-1.5 shadow-xs"
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-l from-orange-500 to-amber-500 hover:brightness-105 text-white font-black text-xs inline-flex items-center justify-center gap-1.5 shadow-xs"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>فتح موقع الإدارة ↗</span>
+                  <span>فتح موقع الإدارة الخارجي (aledara-jamr) ↗</span>
                 </a>
               </div>
             )}

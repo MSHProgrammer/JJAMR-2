@@ -87,6 +87,7 @@ export const EXTRA_10_PLUS_PERKS = [
   { id: 8, icon: '📺', title: 'البث المباشر على شاشة التلفاز', desc: 'امسح باركود الشاشة الفخم واضغط بث لعرض ألعابكم ونتائجكم لحظياً.' },
   { id: 9, icon: '📸', title: 'رفع صورة شخصية من الاستوديو', desc: 'قص دائري احترافي لصورتك الخاصة مع خلفيات متدرجة.' },
   { id: 10, icon: '🛡️', title: 'حفظ الحساب والاشتراك لسنة كاملة', desc: 'ربط دائم بالإيميل وكلمة السر لضمان عدم ضياع أموالك أو مزاياك.' },
+  { id: 11, icon: '💃', title: '50 أنميشن متحرك لكل شخصية', desc: 'اختر من 50 حركة وأنميشن احترافي تتزين به أي شخصية تختارها أو صورتك في كل الغرف.' },
 ];
 
 export function createDefaultPlusStatus(overrides?: Partial<JamrPlusStatus>): JamrPlusStatus {
@@ -100,6 +101,7 @@ export function createDefaultPlusStatus(overrides?: Partial<JamrPlusStatus>): Ja
     glow: { ...DEFAULT_GLOW_CONFIG },
     profileTitle: PLUS_TITLES[0],
     avatarFrame: 'gold_crown',
+    avatarAnimation: 'royal_float',
     reactionStyle: 'confetti',
     soundPack: 'royal_brass',
     heroParticles: true,

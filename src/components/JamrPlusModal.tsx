@@ -41,6 +41,12 @@ import {
   THEME_PRESETS,
 } from '../utils/themeManager';
 import { CHARACTER_AVATARS } from '../data/characterAvatars';
+import {
+  PLUS_ANIMATION_CATEGORIES,
+  PLUS_CHARACTER_ANIMATIONS,
+  PlusCharacterAnimation,
+  resolvePlusAnimation,
+} from '../data/plusAnimations';
 import { CharacterAvatar } from './CharacterAvatar';
 import { JamrFlameLogo } from './FestiveDecor';
 import { PlayerNameWithPlus } from './PlusBadge';
@@ -79,9 +85,11 @@ export const JamrPlusModal: React.FC<JamrPlusModalProps> = ({
   onClose,
 }) => {
   const active = isPlusActive(plusStatus);
-  const [sectionTab, setSectionTab] = useState<'overview' | 'themes' | 'avatars' | 'glow_perks'>(
+  const [sectionTab, setSectionTab] = useState<'overview' | 'themes' | 'avatars' | 'animations' | 'glow_perks'>(
     active ? 'themes' : 'overview'
   );
+  const [animCategory, setAnimCategory] = useState<'all' | PlusCharacterAnimation['category']>('all');
+  const [previewCharId, setPreviewCharId] = useState<string>(playerAvatar);
 
   // Step 1: Email + Password Auth before Payment (No emails sent)
   const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
@@ -258,6 +266,7 @@ export const JamrPlusModal: React.FC<JamrPlusModalProps> = ({
           glow: next.glow,
           profileTitle: next.profileTitle,
           avatarFrame: next.avatarFrame,
+          avatarAnimation: next.avatarAnimation,
           reactionStyle: next.reactionStyle,
           soundPack: next.soundPack,
           heroParticles: next.heroParticles,
@@ -322,12 +331,13 @@ export const JamrPlusModal: React.FC<JamrPlusModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-2.5 bg-[#FFF8EE] border-b border-amber-200">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-2.5 bg-[#FFF8EE] border-b border-amber-200">
           {[
             { id: 'overview', label: active ? 'الاشتراك وحسابي 👑' : 'اشترك الآن (٢ ريال) 💳' },
             { id: 'themes', label: '10 حزم ألوان + الموقع 🎨' },
             { id: 'avatars', label: '50 شخصية + الاستوديو 🧑‍🎨' },
-            { id: 'glow_perks', label: 'التوهج + 10 مزايا + TV ✨' },
+            { id: 'animations', label: '50 أنميشن للشخصيات 💃' },
+            { id: 'glow_perks', label: 'التوهج + 11 ميزة + TV ✨' },
           ].map((t) => (
             <button
               key={t.id}
@@ -827,7 +837,149 @@ export const JamrPlusModal: React.FC<JamrPlusModalProps> = ({
             </div>
           )}
 
-          {/* SECTION 4: CUSTOM GLOW + 10 EXTRA PERKS + TV CAST */}
+          {/* SECTION 4: 50 CHARACTER ANIMATIONS FOR ALL CHARACTERS */}
+          {sectionTab === 'animations' && (
+            <div className="space-y-5">
+              {!active && (
+                <div className="rounded-2xl bg-amber-50 border border-amber-300 p-3.5 text-xs font-bold text-amber-950 flex flex-wrap items-center justify-between gap-2">
+                  <span>🔒 فعّل اشتراك جَمْر بلس (٢ ريال/سنة) لتطبيق أي من الـ 50 أنميشن على شخصياتك في كل الغرف!</span>
+                  <button
+                    type="button"
+                    onClick={() => setSectionTab('overview')}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 text-white font-black text-xs cursor-pointer"
+                  >
+                    اشترك الآن (٢ ريال)
+                  </button>
+                </div>
+              )}
+
+              {/* Live Character Animation Showcase */}
+              {(() => {
+                const currentAnim = resolvePlusAnimation(plusStatus.avatarAnimation);
+                return (
+                  <div className="rounded-3xl bg-gradient-to-br from-[#160F08] via-[#0B0805] to-[#1D1409] border-2 border-amber-400/70 p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-amber-50 shadow-xl">
+                    <div className="flex items-center gap-4">
+                      <CharacterAvatar
+                        avatarId={previewCharId || playerAvatar}
+                        backgroundColor={playerAvatarBg}
+                        size={82}
+                        isPlus
+                        plusGlow={plusStatus.glow}
+                        plusFrame={plusStatus.avatarFrame}
+                        plusAnimation={plusStatus.avatarAnimation || 'royal_float'}
+                        interactive={false}
+                      />
+                      <div className="space-y-1">
+                        <div className="text-sm sm:text-base font-black text-amber-300 flex items-center gap-1.5">
+                          <span>{currentAnim ? `${currentAnim.badge} ${currentAnim.name}` : 'بدون أنميشن مخصص'}</span>
+                          {currentAnim && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-200">
+                              #{currentAnim.index} / 50
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-amber-100/80">
+                          جميع الـ 50 أنميشن تعمل على كل الشخصيات المجانية والملكية وحتى صورتك المرفوعة من الاستوديو!
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap justify-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomChar =
+                            CHARACTER_AVATARS[Math.floor(Math.random() * CHARACTER_AVATARS.length)];
+                          setPreviewCharId(randomChar.id);
+                        }}
+                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-amber-400/40 text-xs font-black text-amber-200 cursor-pointer"
+                      >
+                        جرّب على شخصية أخرى 🎲
+                      </button>
+                      {active && plusStatus.avatarAnimation && plusStatus.avatarAnimation !== 'none' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            SoundFX.playClick();
+                            void updatePlusCustomization({ avatarAnimation: 'none' });
+                          }}
+                          className="px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-xs font-black text-rose-200 cursor-pointer"
+                        >
+                          إيقاف الأنميشن
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Category Filters */}
+              <div className="flex flex-wrap gap-1.5">
+                {PLUS_ANIMATION_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      SoundFX.playClick();
+                      setAnimCategory(cat.id);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer transition ${
+                      animCategory === cat.id
+                        ? 'bg-gradient-to-l from-orange-500 to-amber-500 text-white shadow-xs'
+                        : 'bg-[#FFF8EE] border border-amber-200 text-[#5A3E32] hover:bg-amber-100'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 50 Character Animations Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+                {PLUS_CHARACTER_ANIMATIONS.filter(
+                  (a) => animCategory === 'all' || a.category === animCategory
+                ).map((anim) => {
+                  const selected = (plusStatus.avatarAnimation || 'royal_float') === anim.id;
+                  return (
+                    <button
+                      key={anim.id}
+                      type="button"
+                      disabled={!active}
+                      onClick={() => {
+                        SoundFX.playTileSelect();
+                        void updatePlusCustomization({ avatarAnimation: anim.id });
+                      }}
+                      className={`relative p-2.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition cursor-pointer disabled:cursor-not-allowed ${
+                        selected
+                          ? 'bg-amber-50 border-orange-500 ring-2 ring-orange-400/60 shadow-md scale-[1.03]'
+                          : 'bg-white border-amber-200 hover:bg-[#FFF8EE]'
+                      }`}
+                    >
+                      <span className="absolute top-1.5 right-2 text-[9px] font-mono font-black text-amber-700">
+                        #{anim.index}
+                      </span>
+                      {!active && (
+                        <span className="absolute top-1.5 left-1.5 text-[10px]">🔒</span>
+                      )}
+                      <CharacterAvatar
+                        avatarId={previewCharId || playerAvatar}
+                        backgroundColor={playerAvatarBg}
+                        size={44}
+                        isPlus
+                        plusAnimation={anim.id}
+                        interactive={false}
+                      />
+                      <div className="text-[11px] font-black text-[#23140E] leading-tight line-clamp-2">
+                        {anim.badge} {anim.name}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 5: CUSTOM GLOW + EXTRA PERKS + TV CAST */}
           {sectionTab === 'glow_perks' && (
             <div className="space-y-6">
               {/* Glow & VIP Frame Customizer */}

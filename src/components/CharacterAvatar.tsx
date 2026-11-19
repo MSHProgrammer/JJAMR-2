@@ -5,6 +5,8 @@ import { CharacterMood } from '../context/CharacterReactionContext';
 import { PlusGlowConfig } from '../types/jamr';
 import { getGlowStyleForPlayer, PLUS_AVATAR_FRAMES } from '../utils/plusManager';
 
+import { resolvePlusAnimation } from '../data/plusAnimations';
+
 interface CharacterAvatarProps {
   avatarId?: string | null;
   backgroundColor?: string | null;
@@ -17,6 +19,7 @@ interface CharacterAvatarProps {
   isPlus?: boolean;
   plusGlow?: PlusGlowConfig;
   plusFrame?: string;
+  plusAnimation?: string;
   className?: string;
 }
 
@@ -32,17 +35,26 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
   isPlus = false,
   plusGlow,
   plusFrame,
+  plusAnimation,
   className = '',
 }) => {
   const shouldReduceMotion = useReducedMotion();
   const info = resolveCharacterAvatar(avatarId);
   const bgCss = resolveAvatarBgCss(backgroundColor);
+  const customPlusAnim = isPlus ? resolvePlusAnimation(plusAnimation) : null;
 
   const getMotionAnimation = () => {
     if (shouldReduceMotion) {
       return {
         animate: { scale: 1, rotate: 0, x: 0, y: 0 },
         transition: { duration: 0.15 },
+      };
+    }
+
+    if (mood === 'idle' && customPlusAnim) {
+      return {
+        animate: customPlusAnim.animate,
+        transition: customPlusAnim.transition,
       };
     }
 
@@ -189,7 +201,7 @@ export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
         const glowCss = getGlowStyleForPlayer(isPlus, plusGlow);
         return (
           <motion.div
-            key={`${info.id}_${mood}_${reactionKey}`}
+            key={`${info.id}_${mood}_${reactionKey}_${customPlusAnim?.id || 'std'}`}
             animate={anim.animate}
             transition={anim.transition}
             whileHover={interactive && !shouldReduceMotion ? { scale: 1.12, rotate: -4 } : undefined}

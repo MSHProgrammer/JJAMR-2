@@ -30,6 +30,7 @@ import type {
   Player,
   PlusGlowConfig,
   Question,
+  ReservedUsernameRecord,
   RoomState,
   Section,
   Topic,
@@ -113,7 +114,7 @@ function loadAndReconcileStore(): DataStoreSnapshot {
   }
 
   const games = reconcileById(DEFAULT_GAMES, parsed.games).map((g) => {
-    if (g.id === 'sound_mimic') {
+    if (g.id === 'sound_mimic' && (!Array.isArray(parsed.games) || parsed.games.length === 0)) {
       return {
         ...g,
         isActive: false,
@@ -145,13 +146,21 @@ function loadAndReconcileStore(): DataStoreSnapshot {
       parsed.pendingAdminUsernames && typeof parsed.pendingAdminUsernames === 'object'
         ? parsed.pendingAdminUsernames
         : {},
+    reservedUsernames: Array.isArray(parsed.reservedUsernames) ? parsed.reservedUsernames : [],
+    bridgeConfig:
+      parsed.bridgeConfig && typeof parsed.bridgeConfig === 'object'
+        ? parsed.bridgeConfig
+        : { mainGameUrl: '', bridgeKey: '1100321', totalBridgeRequests: 0 },
   };
 
   persistStore(store);
   return store;
 }
 
+let catalogVersion = Date.now();
+
 function persistStore(store: DataStoreSnapshot): void {
+  catalogVersion = Date.now();
   try {
     fs.writeFileSync(STORE_PATH, JSON.stringify(store), 'utf8');
   } catch (err) {
@@ -219,12 +228,18 @@ const ALLOWED_CORS_ORIGINS = new Set([
 
 app.use('/api', (req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (ALLOWED_CORS_ORIGINS.has(origin) || origin.endsWith('.run.app') || origin.includes('localhost'))) {
+  if (
+    origin &&
+    (ALLOWED_CORS_ORIGINS.has(origin) ||
+      origin.endsWith('.run.app') ||
+      origin.endsWith('.vercel.app') ||
+      origin.includes('localhost'))
+  ) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jamr-bridge-key');
   }
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
@@ -240,17 +255,19 @@ app.use('/api', (req, res, next) => {
 // Public API Routes
 // ---------------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, rooms: rooms.size, games: dataStore.games.length });
+  res.json({ ok: true, rooms: rooms.size, games: dataStore.games.length, catalogVersion });
 });
 
 app.get('/api/catalog', (_req, res) => {
   res.json({
+    catalogVersion,
     games: dataStore.games,
     sections: dataStore.sections,
     topics: dataStore.topics,
     questionsCount: dataStore.questions.length,
     barrahCategories: dataStore.barrahCategories,
     dubScenes: dataStore.dubScenes || DEFAULT_DUB_SCENES,
+    cheatCodesCount: (dataStore.cheatCodes || []).filter((c) => c.enabled).length,
   });
 });
 
@@ -850,6 +867,7 @@ app.post('/api/users/register', (req, res) => {
     : undefined;
   const plusTitle = req.body?.plusTitle ? sanitizeText(String(req.body.plusTitle), 40) : undefined;
   const plusFrame = req.body?.plusFrame ? sanitizeText(String(req.body.plusFrame), 24) : undefined;
+  const plusAnimation = req.body?.plusAnimation ? sanitizeText(String(req.body.plusAnimation), 48) : undefined;
 
   if (username.length < 1 || username.length > 20) {
     return res.status(400).json({
@@ -860,7 +878,7 @@ app.post('/api/users/register', (req, res) => {
 
   const users = (dataStore.users = dataStore.users || {});
   const existing = users[username];
-  if (existing && existing.playerId !== playerId) {
+  if (existing && existing.playerId && playerId && existing.playerId !== playerId) {
     return res.status(409).json({
       ok: false,
       error: `اليوزر نيم @${username} محجوز ومستخدم لشخص آخر! اختر يوزر نيم غير مكرر.`,
@@ -870,6 +888,7 @@ app.post('/api/users/register', (req, res) => {
   const record: UserRecord = existing
     ? {
         ...existing,
+        playerId: playerId || existing.playerId,
         displayName,
         avatar,
         avatarBg,
@@ -877,6 +896,7 @@ app.post('/api/users/register', (req, res) => {
         plusGlow: plusGlow || existing.plusGlow,
         plusTitle: plusTitle || existing.plusTitle,
         plusFrame: plusFrame || existing.plusFrame,
+        plusAnimation: plusAnimation || existing.plusAnimation,
         lastSeen: Date.now(),
       }
     : {
@@ -896,6 +916,7 @@ app.post('/api/users/register', (req, res) => {
         plusGlow,
         plusTitle,
         plusFrame,
+        plusAnimation,
         lastSeen: Date.now(),
       };
 
@@ -906,12 +927,31 @@ app.post('/api/users/register', (req, res) => {
 
 app.post('/api/users/sync-presence', (req, res) => {
   const username = normalizeUsername(req.body?.username);
-  if (!username) return res.json({ ok: true });
+  if (!username || username.length > 20) return res.json({ ok: true });
   const users = (dataStore.users = dataStore.users || {});
-  const u = users[username];
-  if (!u) return res.json({ ok: false });
+  let u = users[username];
+  let created = false;
+  if (!u) {
+    created = true;
+    u = {
+      username,
+      playerId: sanitizeText(String(req.body?.playerId || `u_${Date.now().toString(36)}`), 80),
+      displayName: sanitizeText(String(req.body?.displayName || username), 30) || username,
+      avatar: sanitizeAvatarPayload(req.body?.avatar, 'char_01'),
+      avatarBg: sanitizeText(String(req.body?.avatarBg || ''), 32) || undefined,
+      friends: [],
+      incomingRequests: [],
+      outgoingRequests: [],
+      notifications: [],
+      isPlus: Boolean(req.body?.isPlus),
+      plusAnimation: req.body?.plusAnimation ? sanitizeText(String(req.body.plusAnimation), 48) : undefined,
+      lastSeen: Date.now(),
+    };
+    users[username] = u;
+  }
 
   u.lastSeen = Date.now();
+  if (created) persistStore(dataStore);
   if (req.body?.displayName) u.displayName = sanitizeText(String(req.body.displayName), 30) || u.displayName;
   if (req.body?.avatar) u.avatar = sanitizeAvatarPayload(req.body.avatar, u.avatar);
   if (req.body?.avatarBg) u.avatarBg = sanitizeText(String(req.body.avatarBg), 32);
@@ -922,6 +962,12 @@ app.post('/api/users/sync-presence', (req, res) => {
   }
   if (req.body?.plusTitle !== undefined) {
     u.plusTitle = sanitizeText(String(req.body.plusTitle || ''), 40) || undefined;
+  }
+  if (req.body?.plusFrame !== undefined) {
+    u.plusFrame = sanitizeText(String(req.body.plusFrame || ''), 24) || undefined;
+  }
+  if (req.body?.plusAnimation !== undefined) {
+    u.plusAnimation = sanitizeText(String(req.body.plusAnimation || ''), 48) || undefined;
   }
   if (req.body?.roomCode !== undefined) {
     const rc = String(req.body.roomCode || '').trim().toUpperCase();
@@ -1186,6 +1232,7 @@ app.post('/api/plus/customize', (req, res) => {
   const glow = req.body?.glow && typeof req.body.glow === 'object' ? (req.body.glow as PlusGlowConfig) : undefined;
   const profileTitle = req.body?.profileTitle !== undefined ? sanitizeText(String(req.body.profileTitle), 40) : undefined;
   const avatarFrame = req.body?.avatarFrame ? sanitizeText(String(req.body.avatarFrame), 24) : undefined;
+  const avatarAnimation = req.body?.avatarAnimation !== undefined ? sanitizeText(String(req.body.avatarAnimation), 48) : undefined;
   const reactionStyle = req.body?.reactionStyle ? sanitizeText(String(req.body.reactionStyle), 20) : undefined;
   const soundPack = req.body?.soundPack ? sanitizeText(String(req.body.soundPack), 20) : undefined;
   const heroParticles = typeof req.body?.heroParticles === 'boolean' ? req.body.heroParticles : undefined;
@@ -1196,6 +1243,7 @@ app.post('/api/plus/customize', (req, res) => {
       glow: glow || account.plus.glow,
       profileTitle: profileTitle !== undefined ? profileTitle : account.plus.profileTitle,
       avatarFrame: (avatarFrame as JamrPlusStatus['avatarFrame']) || account.plus.avatarFrame,
+      avatarAnimation: avatarAnimation !== undefined ? avatarAnimation : account.plus.avatarAnimation,
       reactionStyle: (reactionStyle as JamrPlusStatus['reactionStyle']) || account.plus.reactionStyle,
       soundPack: (soundPack as JamrPlusStatus['soundPack']) || account.plus.soundPack,
       heroParticles: heroParticles !== undefined ? heroParticles : account.plus.heroParticles,
@@ -1204,6 +1252,7 @@ app.post('/api/plus/customize', (req, res) => {
       dataStore.users[account.username].plusGlow = account.plus.glow;
       dataStore.users[account.username].plusTitle = account.plus.profileTitle;
       dataStore.users[account.username].plusFrame = account.plus.avatarFrame;
+      dataStore.users[account.username].plusAnimation = account.plus.avatarAnimation;
     }
     persistStore(dataStore);
   }
@@ -1312,13 +1361,185 @@ app.post('/api/tv/cast', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Standalone Admin Portal Usernames & QR Claim Bridge
+// Standalone & Integrated Admin Portal Usernames, QR Claim & Bridge Sync
 // ---------------------------------------------------------------------------
+function getEffectiveBridgeKey(): string {
+  return String(
+    dataStore.bridgeConfig?.bridgeKey || process.env.BRIDGE_KEY || getConfiguredAdminPassword() || '1100321'
+  ).trim();
+}
+
+function isBridgeOrAdminAuthorized(req: Request): boolean {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const exp = adminTokens.get(token);
+  if (token && exp && Date.now() <= exp) return true;
+
+  const keyHeader = String(req.headers['x-jamr-bridge-key'] || req.query.bridgeKey || '').trim();
+  if (!keyHeader) return false;
+  return keyHeader === getEffectiveBridgeKey() || isMatchingAdminPassword(keyHeader);
+}
+
+function requireBridgeOrAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!isBridgeOrAdminAuthorized(req)) {
+    return res.status(401).json({ ok: false, error: 'مفتاح الربط أو جلسة الإدارة غير صالحة.' });
+  }
+  return next();
+}
+
+function applySnapshotPayload(mode: 'merge' | 'replace', payload: Partial<DataStoreSnapshot>) {
+  if (mode === 'replace') {
+    dataStore = {
+      ...dataStore,
+      sections: Array.isArray(payload.sections) ? payload.sections : dataStore.sections,
+      topics: Array.isArray(payload.topics) ? payload.topics : dataStore.topics,
+      questions: Array.isArray(payload.questions) ? payload.questions : dataStore.questions,
+      games: Array.isArray(payload.games) ? payload.games : dataStore.games,
+      barrahCategories: Array.isArray(payload.barrahCategories) ? payload.barrahCategories : dataStore.barrahCategories,
+      reports: Array.isArray(payload.reports) ? payload.reports : dataStore.reports,
+      mimicSounds: Array.isArray(payload.mimicSounds) ? payload.mimicSounds : dataStore.mimicSounds,
+      cheatCodes: Array.isArray(payload.cheatCodes) ? payload.cheatCodes : dataStore.cheatCodes,
+      dubScenes: Array.isArray(payload.dubScenes) ? payload.dubScenes : dataStore.dubScenes,
+      reservedUsernames: Array.isArray(payload.reservedUsernames) ? payload.reservedUsernames : dataStore.reservedUsernames,
+      users: payload.users && typeof payload.users === 'object' ? payload.users : dataStore.users,
+      pendingAdminUsernames:
+        payload.pendingAdminUsernames && typeof payload.pendingAdminUsernames === 'object'
+          ? payload.pendingAdminUsernames
+          : dataStore.pendingAdminUsernames,
+    };
+  } else {
+    dataStore = {
+      ...dataStore,
+      sections: payload.sections ? reconcileById(dataStore.sections, payload.sections) : dataStore.sections,
+      topics: payload.topics ? reconcileById(dataStore.topics, payload.topics) : dataStore.topics,
+      questions: payload.questions ? reconcileById(dataStore.questions, payload.questions) : dataStore.questions,
+      games: payload.games ? reconcileById(dataStore.games, payload.games) : dataStore.games,
+      barrahCategories: payload.barrahCategories
+        ? reconcileById(dataStore.barrahCategories, payload.barrahCategories)
+        : dataStore.barrahCategories,
+      reports: payload.reports ? reconcileById(dataStore.reports, payload.reports) : dataStore.reports,
+      mimicSounds: payload.mimicSounds ? reconcileById(dataStore.mimicSounds, payload.mimicSounds) : dataStore.mimicSounds,
+      cheatCodes: payload.cheatCodes ? reconcileById(dataStore.cheatCodes || [], payload.cheatCodes) : dataStore.cheatCodes,
+      dubScenes: payload.dubScenes ? reconcileById(dataStore.dubScenes || [], payload.dubScenes) : dataStore.dubScenes,
+      reservedUsernames: payload.reservedUsernames
+        ? reconcileById(dataStore.reservedUsernames || [], payload.reservedUsernames)
+        : dataStore.reservedUsernames,
+      users: { ...(dataStore.users || {}), ...(payload.users || {}) },
+      pendingAdminUsernames: {
+        ...(dataStore.pendingAdminUsernames || {}),
+        ...(payload.pendingAdminUsernames || {}),
+      },
+    };
+  }
+  persistStore(dataStore);
+  broadcastCatalogUpdate();
+}
+
+function redeemAdminQrOrUsername(params: {
+  rawUsername?: unknown;
+  rawToken?: unknown;
+  playerId?: unknown;
+  displayName?: unknown;
+  avatar?: unknown;
+  avatarBg?: unknown;
+}): { ok: boolean; error?: string; status?: number; user?: UserRecord; reserved?: ReservedUsernameRecord } {
+  const tokenStr = String(params.rawToken || '').trim();
+  const parsedTokenFromRaw = (() => {
+    const rawStr = String(params.rawUsername || '').trim();
+    const m = rawStr.match(/[?&](?:claim_qr|qr_token)=([a-zA-Z0-9_-]{4,80})/i);
+    if (m?.[1]) return m[1];
+    if (/^(?:jqr_|qr_)[a-zA-Z0-9_-]{4,80}$/i.test(rawStr)) return rawStr;
+    return '';
+  })();
+
+  const finalToken = tokenStr || parsedTokenFromRaw;
+  const reservedList = (dataStore.reservedUsernames = dataStore.reservedUsernames || []);
+  const pending = (dataStore.pendingAdminUsernames = dataStore.pendingAdminUsernames || {});
+  const users = (dataStore.users = dataStore.users || {});
+
+  let reservedMatch: ReservedUsernameRecord | undefined;
+  if (finalToken) {
+    reservedMatch = reservedList.find((r) => r.qrToken && r.qrToken === finalToken);
+  }
+
+  const parsedHandleFromRaw = (() => {
+    const rawStr = String(params.rawUsername || '').trim();
+    const m = rawStr.match(/(?:assign_username|claim_username|admin_user|username|u)=([a-zA-Z0-9_]{1,20})/i);
+    if (m?.[1]) return normalizeUsername(m[1]);
+    if (parsedTokenFromRaw) return '';
+    return normalizeUsername(rawStr);
+  })();
+
+  const resolvedUsername = reservedMatch?.username || parsedHandleFromRaw;
+  if (!resolvedUsername || resolvedUsername.length < 1 || resolvedUsername.length > 20) {
+    return {
+      ok: false,
+      status: 400,
+      error: finalToken
+        ? 'كود/رابط QR الإداري غير صالح أو غير مسجّل في هذا الخادم.'
+        : 'اليوزر نيم غير صالح (1 إلى 20 حرف/رقم إنجليزي أو _).',
+    };
+  }
+
+  if (!reservedMatch) {
+    reservedMatch = reservedList.find((r) => r.username === resolvedUsername);
+  }
+  const provisioned = pending[resolvedUsername];
+  const playerId = sanitizeText(String(params.playerId || ''), 80) || `u_${Date.now().toString(36)}`;
+  const existing = users[resolvedUsername];
+
+  if (existing && existing.playerId && existing.playerId !== playerId && !provisioned && !reservedMatch) {
+    return {
+      ok: false,
+      status: 409,
+      error: `اليوزر نيم @${resolvedUsername} محجوز للاعب آخر.`,
+    };
+  }
+
+  const shouldGrantPlus = Boolean(provisioned?.isPlus || reservedMatch?.allowJamrPlus);
+  const record: UserRecord = existing
+    ? {
+        ...existing,
+        playerId,
+        displayName: provisioned?.displayName || existing.displayName,
+        isPlus: shouldGrantPlus || existing.isPlus,
+        lastSeen: Date.now(),
+      }
+    : {
+        username: resolvedUsername,
+        playerId,
+        displayName: provisioned?.displayName || sanitizeText(String(params.displayName || resolvedUsername), 30),
+        avatar: provisioned?.avatar || sanitizeAvatarPayload(params.avatar, 'char_01'),
+        avatarBg: provisioned?.avatarBg || sanitizeText(String(params.avatarBg || ''), 32) || undefined,
+        friends: [],
+        incomingRequests: [],
+        outgoingRequests: [],
+        notifications: [],
+        isPlus: shouldGrantPlus,
+        lastSeen: Date.now(),
+      };
+
+  users[resolvedUsername] = record;
+  if (provisioned) {
+    provisioned.claimedByPlayerId = playerId;
+  }
+  if (reservedMatch) {
+    reservedMatch.status = 'claimed';
+    reservedMatch.claimedByPlayerId = playerId;
+    reservedMatch.claimedByDisplayName = record.displayName;
+    reservedMatch.claimedVia = finalToken ? 'qr' : 'admin';
+    reservedMatch.claimedAt = new Date().toISOString();
+  }
+  persistStore(dataStore);
+  return { ok: true, user: record, reserved: reservedMatch };
+}
+
 app.get('/api/admin/users', requireAdmin, (_req, res) => {
   return res.json({
     ok: true,
     users: Object.values(dataStore.users || {}),
     pendingAdminUsernames: Object.values(dataStore.pendingAdminUsernames || {}),
+    reservedUsernames: dataStore.reservedUsernames || [],
   });
 });
 
@@ -1342,54 +1563,236 @@ app.post('/api/admin/users/assign', requireAdmin, (req, res) => {
     createdAt: Date.now(),
   };
   pending[username] = entry;
+
+  const list = (dataStore.reservedUsernames = dataStore.reservedUsernames || []);
+  let resRec = list.find((r) => r.username === username);
+  const qrToken = resRec?.qrToken || `jqr_${crypto.randomBytes(6).toString('hex')}`;
+  if (!resRec) {
+    resRec = {
+      id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+      username,
+      tier: isPlus ? 'vip' : 'standard',
+      status: 'reserved',
+      allowJamrPlus: isPlus,
+      note: displayName,
+      qrToken,
+      qrExpiresAt: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+    list.unshift(resRec);
+  } else {
+    resRec.qrToken = qrToken;
+    resRec.allowJamrPlus = isPlus || resRec.allowJamrPlus;
+  }
+
   persistStore(dataStore);
-  return res.json({ ok: true, provisioned: entry });
+  broadcastCatalogUpdate();
+  return res.json({ ok: true, provisioned: entry, record: resRec, qrToken });
+});
+
+app.get('/api/admin/usernames', requireAdmin, (_req, res) => {
+  return res.json({ ok: true, usernames: dataStore.reservedUsernames || [] });
+});
+
+app.post('/api/admin/usernames', requireAdmin, (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  if (!username || username.length < 1 || username.length > 20) {
+    return res.status(400).json({ ok: false, error: 'اليوزر نيم يجب أن يكون بين 1 و 20 خانة بالإنجليزية.' });
+  }
+  const list = (dataStore.reservedUsernames = dataStore.reservedUsernames || []);
+  const dup = list.find((r) => r.username === username);
+  if (dup) {
+    return res.status(409).json({ ok: false, error: `اليوزر نيم @${username} موجود بالفعل في القائمة.` });
+  }
+  const allowJamrPlus = req.body?.allowJamrPlus !== undefined ? Boolean(req.body.allowJamrPlus) : true;
+  const tier = (['standard', 'vip', 'brand'].includes(String(req.body?.tier)) ? req.body.tier : 'vip') as 'standard' | 'vip' | 'brand';
+  const qrToken = `jqr_${crypto.randomBytes(6).toString('hex')}`;
+  const rec: ReservedUsernameRecord = {
+    id: `rsv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+    username,
+    tier,
+    status: 'reserved',
+    allowJamrPlus,
+    note: req.body?.note ? sanitizeText(String(req.body.note), 160) : undefined,
+    qrToken,
+    qrExpiresAt: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+  list.unshift(rec);
+  const pending = (dataStore.pendingAdminUsernames = dataStore.pendingAdminUsernames || {});
+  pending[username] = {
+    username,
+    displayName: username,
+    isPlus: allowJamrPlus,
+    createdAt: Date.now(),
+  };
+  persistStore(dataStore);
+  broadcastCatalogUpdate();
+  return res.status(201).json({ ok: true, usernameRecord: rec });
+});
+
+app.put('/api/admin/usernames/:id', requireAdmin, (req, res) => {
+  const list = (dataStore.reservedUsernames = dataStore.reservedUsernames || []);
+  const idx = list.findIndex((r) => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'السجل غير موجود.' });
+  const prev = list[idx];
+  list[idx] = {
+    ...prev,
+    tier: req.body?.tier && ['standard', 'vip', 'brand'].includes(req.body.tier) ? req.body.tier : prev.tier,
+    allowJamrPlus: req.body?.allowJamrPlus !== undefined ? Boolean(req.body.allowJamrPlus) : prev.allowJamrPlus,
+    note: req.body?.note !== undefined ? sanitizeText(String(req.body.note), 160) : prev.note,
+    status: req.body?.status === 'reserved' || req.body?.status === 'claimed' ? req.body.status : prev.status,
+  };
+  persistStore(dataStore);
+  broadcastCatalogUpdate();
+  return res.json({ ok: true, usernameRecord: list[idx] });
+});
+
+app.delete('/api/admin/usernames/:id', requireAdmin, (req, res) => {
+  const list = (dataStore.reservedUsernames = dataStore.reservedUsernames || []);
+  const target = list.find((r) => r.id === req.params.id);
+  dataStore.reservedUsernames = list.filter((r) => r.id !== req.params.id);
+  if (target && dataStore.pendingAdminUsernames?.[target.username]) {
+    delete dataStore.pendingAdminUsernames[target.username];
+  }
+  persistStore(dataStore);
+  broadcastCatalogUpdate();
+  return res.json({ ok: true });
+});
+
+app.post('/api/admin/usernames/:id/qr', requireAdmin, (req, res) => {
+  const list = (dataStore.reservedUsernames = dataStore.reservedUsernames || []);
+  const idx = list.findIndex((r) => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'السجل غير موجود.' });
+  const qrToken = `jqr_${crypto.randomBytes(6).toString('hex')}`;
+  list[idx] = {
+    ...list[idx],
+    qrToken,
+    qrExpiresAt: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
+  };
+  persistStore(dataStore);
+  return res.json({
+    ok: true,
+    usernameRecord: list[idx],
+    qrToken,
+    claimQuery: `?claim_qr=${encodeURIComponent(qrToken)}&assign_username=${encodeURIComponent(list[idx].username)}`,
+  });
+});
+
+app.get('/api/admin/bridge', requireAdmin, (_req, res) => {
+  return res.json({ ok: true, bridgeConfig: dataStore.bridgeConfig || { bridgeKey: getEffectiveBridgeKey() } });
+});
+
+app.put('/api/admin/bridge', requireAdmin, (req, res) => {
+  dataStore.bridgeConfig = {
+    ...(dataStore.bridgeConfig || {}),
+    mainGameUrl: req.body?.mainGameUrl !== undefined ? sanitizeText(String(req.body.mainGameUrl), 250) : dataStore.bridgeConfig?.mainGameUrl,
+    bridgeKey: req.body?.bridgeKey ? sanitizeText(String(req.body.bridgeKey), 80) : getEffectiveBridgeKey(),
+  };
+  persistStore(dataStore);
+  return res.json({ ok: true, bridgeConfig: dataStore.bridgeConfig });
+});
+
+// Bridge Endpoints (used by aledara-jamr.vercel.app & instant API links)
+app.get('/api/bridge/status', (_req, res) => {
+  return res.json({
+    ok: true,
+    bridgeReady: true,
+    catalogVersion,
+    gamesCount: dataStore.games.length,
+    cheatCodesCount: (dataStore.cheatCodes || []).length,
+    reservedUsernamesCount: (dataStore.reservedUsernames || []).length,
+    usersCount: Object.keys(dataStore.users || {}).length,
+  });
+});
+
+app.post('/api/bridge/sync', requireBridgeOrAdmin, (req, res) => {
+  const mode = req.body?.mode === 'replace' ? 'replace' : 'merge';
+  const payload = (req.body?.data && typeof req.body.data === 'object' ? req.body.data : req.body) as Partial<DataStoreSnapshot>;
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ ok: false, error: 'بيانات المزامنة غير صالحة.' });
+  }
+  dataStore.bridgeConfig = {
+    ...(dataStore.bridgeConfig || {}),
+    totalBridgeRequests: (dataStore.bridgeConfig?.totalBridgeRequests || 0) + 1,
+  };
+  applySnapshotPayload(mode, payload);
+  return res.json({ ok: true, catalogVersion, store: dataStore });
+});
+
+app.get('/api/bridge/usernames/check', (req, res) => {
+  const uname = normalizeUsername(req.query.username);
+  if (!uname || uname.length > 20) {
+    return res.status(400).json({ ok: false, available: false, error: 'اليوزر نيم غير صالح.' });
+  }
+  const activeUser = dataStore.users?.[uname];
+  const reserved = (dataStore.reservedUsernames || []).find((r) => r.username === uname);
+  const available = !activeUser && !reserved;
+  return res.json({
+    ok: true,
+    username: uname,
+    available,
+    reserved: Boolean(reserved),
+    allowJamrPlus: Boolean(reserved?.allowJamrPlus),
+    status: reserved?.status || (activeUser ? 'claimed' : 'available'),
+  });
+});
+
+app.post('/api/bridge/usernames/claim-qr', (req, res) => {
+  const result = redeemAdminQrOrUsername({
+    rawUsername: req.body?.username,
+    rawToken: req.body?.token || req.body?.qrToken || req.body?.claim_qr,
+    playerId: req.body?.playerId,
+    displayName: req.body?.displayName,
+    avatar: req.body?.avatar,
+    avatarBg: req.body?.avatarBg,
+  });
+  if (!result.ok || !result.user) {
+    return res.status(result.status || 400).json({ ok: false, error: result.error || 'تعذر تفعيل اليوزر نيم.' });
+  }
+  return res.json({ ok: true, user: result.user, reserved: result.reserved });
+});
+
+app.post('/api/bridge/usernames/claim-plus', (req, res) => {
+  const result = redeemAdminQrOrUsername({
+    rawUsername: req.body?.username,
+    rawToken: req.body?.token || req.body?.qrToken,
+    playerId: req.body?.playerId,
+    displayName: req.body?.displayName,
+    avatar: req.body?.avatar,
+    avatarBg: req.body?.avatarBg,
+  });
+  if (!result.ok || !result.user) {
+    return res.status(result.status || 400).json({ ok: false, error: result.error });
+  }
+  result.user.isPlus = true;
+  persistStore(dataStore);
+  return res.json({ ok: true, user: result.user });
+});
+
+app.post('/api/bridge/plus/purchase', (req, res) => {
+  const uname = normalizeUsername(req.body?.username);
+  if (uname && dataStore.users?.[uname]) {
+    dataStore.users[uname].isPlus = true;
+    dataStore.users[uname].plusExpiresAt = Date.now() + ONE_YEAR_MS;
+    persistStore(dataStore);
+  }
+  return res.json({ ok: true });
 });
 
 app.post('/api/users/claim-admin-qr', (req, res) => {
-  const username = normalizeUsername(req.body?.username);
-  const playerId = sanitizeText(String(req.body?.playerId || ''), 80) || `u_${Date.now().toString(36)}`;
-  if (!username || username.length < 1 || username.length > 20) {
-    return res.status(400).json({ ok: false, error: 'رمز اليوزر نيم غير صالح.' });
+  const result = redeemAdminQrOrUsername({
+    rawUsername: req.body?.username,
+    rawToken: req.body?.token || req.body?.qrToken || req.body?.claim_qr,
+    playerId: req.body?.playerId,
+    displayName: req.body?.displayName,
+    avatar: req.body?.avatar,
+    avatarBg: req.body?.avatarBg,
+  });
+  if (!result.ok || !result.user) {
+    return res.status(result.status || 400).json({ ok: false, error: result.error || 'رمز اليوزر نيم غير صالح.' });
   }
-
-  const users = (dataStore.users = dataStore.users || {});
-  const pending = (dataStore.pendingAdminUsernames = dataStore.pendingAdminUsernames || {});
-  const provisioned = pending[username];
-  const existing = users[username];
-
-  if (existing && existing.playerId !== playerId && !provisioned) {
-    return res.status(409).json({ ok: false, error: `اليوزر نيم @${username} محجوز للاعب آخر.` });
-  }
-
-  const record: UserRecord = existing
-    ? {
-        ...existing,
-        playerId,
-        displayName: provisioned?.displayName || existing.displayName,
-        isPlus: provisioned?.isPlus ?? existing.isPlus,
-        lastSeen: Date.now(),
-      }
-    : {
-        username,
-        playerId,
-        displayName: provisioned?.displayName || sanitizeText(String(req.body?.displayName || username), 30),
-        avatar: provisioned?.avatar || sanitizeAvatarPayload(req.body?.avatar, 'char_01'),
-        avatarBg: provisioned?.avatarBg || sanitizeText(String(req.body?.avatarBg || ''), 32) || undefined,
-        friends: [],
-        incomingRequests: [],
-        outgoingRequests: [],
-        notifications: [],
-        isPlus: Boolean(provisioned?.isPlus),
-        lastSeen: Date.now(),
-      };
-
-  users[username] = record;
-  if (provisioned) {
-    provisioned.claimedByPlayerId = playerId;
-  }
-  persistStore(dataStore);
-  return res.json({ ok: true, user: record });
+  return res.json({ ok: true, user: result.user, reserved: result.reserved });
 });
 
 app.get('/api/friends/state', (req, res) => {
@@ -1417,6 +1820,9 @@ app.get('/api/friends/state', (req, res) => {
       displayName: rec?.displayName || handle,
       avatar: rec?.avatar || 'char_01',
       avatarBg: rec?.avatarBg,
+      isPlus: Boolean(rec?.isPlus),
+      plusGlow: rec?.plusGlow,
+      plusAnimation: rec?.plusAnimation,
       isOnline: Boolean(rec && now - rec.lastSeen < 120_000),
       roomCode: activeRoom ? activeRoom.code : null,
       gameId: activeRoom ? activeRoom.gameId : null,
@@ -1432,6 +1838,9 @@ app.get('/api/friends/state', (req, res) => {
       displayName: me.displayName,
       avatar: me.avatar,
       avatarBg: me.avatarBg,
+      isPlus: me.isPlus,
+      plusGlow: me.plusGlow,
+      plusAnimation: me.plusAnimation,
       dubXp: me.dubXp || 0,
       dubTitles: me.dubTitles || [],
       dubAchievements: me.dubAchievements || [],
@@ -1448,11 +1857,68 @@ app.post('/api/friends/request', (req, res) => {
   const targetUsername = normalizeUsername(req.body?.targetUsername);
   const users = (dataStore.users = dataStore.users || {});
 
-  if (!fromUsername || !users[fromUsername]) {
-    return res.status(400).json({ ok: false, error: 'يجب إنشاء يوزر نيم خاص بك أولاً قبل إضافة الأصدقاء!' });
+  if (!fromUsername || fromUsername.length > 20) {
+    return res.status(400).json({ ok: false, error: 'أنشئ يوزر نيم خاص بك أولاً في البطاقة أعلاه قبل إضافة الأصدقاء!' });
   }
+
+  // Seamless auto-hydration if user had a local handle or session reset
+  if (!users[fromUsername]) {
+    users[fromUsername] = {
+      username: fromUsername,
+      playerId: sanitizeText(String(req.body?.fromPlayerId || `u_${Date.now().toString(36)}`), 80),
+      displayName: sanitizeText(String(req.body?.fromDisplayName || fromUsername), 30) || fromUsername,
+      avatar: sanitizeAvatarPayload(req.body?.fromAvatar, 'char_01'),
+      avatarBg: sanitizeText(String(req.body?.fromAvatarBg || ''), 32) || undefined,
+      friends: [],
+      incomingRequests: [],
+      outgoingRequests: [],
+      notifications: [],
+      isPlus: Boolean(req.body?.fromIsPlus),
+      plusGlow: req.body?.fromPlusGlow && typeof req.body.fromPlusGlow === 'object' ? (req.body.fromPlusGlow as PlusGlowConfig) : undefined,
+      plusAnimation: req.body?.fromPlusAnimation ? sanitizeText(String(req.body.fromPlusAnimation), 48) : undefined,
+      lastSeen: Date.now(),
+    };
+  }
+
+  // Also check accounts or claimed/pending reserved usernames for targetUsername
+  if (targetUsername && !users[targetUsername]) {
+    const matchedAccount = Object.values(dataStore.accounts || {}).find((a) => a.username === targetUsername);
+    const matchedPending = dataStore.pendingAdminUsernames?.[targetUsername];
+    if (matchedAccount) {
+      users[targetUsername] = {
+        username: targetUsername,
+        playerId: matchedAccount.id,
+        displayName: matchedAccount.displayName || targetUsername,
+        avatar: matchedAccount.avatar || 'char_01',
+        avatarBg: matchedAccount.avatarBg,
+        friends: [],
+        incomingRequests: [],
+        outgoingRequests: [],
+        notifications: [],
+        isPlus: Boolean(matchedAccount.plus?.isActive),
+        plusGlow: matchedAccount.plus?.glow,
+        plusAnimation: matchedAccount.plus?.avatarAnimation,
+        lastSeen: matchedAccount.lastLoginAt || Date.now(),
+      };
+    } else if (matchedPending) {
+      users[targetUsername] = {
+        username: targetUsername,
+        playerId: matchedPending.claimedByPlayerId || `u_${Date.now().toString(36)}`,
+        displayName: matchedPending.displayName || targetUsername,
+        avatar: matchedPending.avatar || 'char_01',
+        avatarBg: matchedPending.avatarBg,
+        friends: [],
+        incomingRequests: [],
+        outgoingRequests: [],
+        notifications: [],
+        isPlus: Boolean(matchedPending.isPlus),
+        lastSeen: matchedPending.createdAt || Date.now(),
+      };
+    }
+  }
+
   if (!targetUsername || !users[targetUsername]) {
-    return res.status(404).json({ ok: false, error: 'لم يتم العثور على لاعب بهذا اليوزر نيم. الإضافة تتم باليوزر نيم الفريد فقط.' });
+    return res.status(404).json({ ok: false, error: `لم يتم العثور على لاعب باليوزر نيم @${targetUsername || '؟'}. تأكد من كتابته أو اطلب من صديقك فتح صفحة الأصدقاء وتفعيل يوزر نيمه.` });
   }
   if (fromUsername === targetUsername) {
     return res.status(400).json({ ok: false, error: 'لا يمكنك إضافة نفسك كصديق!' });
@@ -1463,6 +1929,32 @@ app.post('/api/friends/request', (req, res) => {
 
   if (me.friends.includes(targetUsername)) {
     return res.status(400).json({ ok: false, error: `@${targetUsername} موجود بالفعل في قائمة أصدقائك.` });
+  }
+
+  // Mutual auto-accept: if target already sent an incoming request to me, accept immediately into friends list!
+  if (me.incomingRequests.includes(targetUsername) || target.outgoingRequests.includes(fromUsername)) {
+    me.incomingRequests = me.incomingRequests.filter((u) => u !== targetUsername);
+    target.outgoingRequests = target.outgoingRequests.filter((u) => u !== fromUsername);
+    if (!me.friends.includes(targetUsername)) me.friends.unshift(targetUsername);
+    if (!target.friends.includes(fromUsername)) target.friends.unshift(fromUsername);
+    pushUserNotification(targetUsername, {
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'friend_request',
+      title: 'تمت الصداقة بينكم تلقائياً 🎉',
+      body: `أصبح ${me.displayName} (@${me.username}) صديقك الآن في منصة جَمْر!`,
+      fromUsername: me.username,
+      fromDisplayName: me.displayName,
+      fromAvatar: me.avatar,
+      fromAvatarBg: me.avatarBg,
+      read: false,
+      createdAt: Date.now(),
+    });
+    persistStore(dataStore);
+    return res.json({
+      ok: true,
+      acceptedDirectly: true,
+      message: `تم قبول الصداقة مع @${targetUsername} وإضافته فوراً! 🎉`,
+    });
   }
 
   if (!target.incomingRequests.includes(fromUsername)) {
@@ -1486,7 +1978,7 @@ app.post('/api/friends/request', (req, res) => {
   });
 
   persistStore(dataStore);
-  return res.json({ ok: true, message: `تم إرسال طلب الصداقة إلى @${targetUsername}` });
+  return res.json({ ok: true, message: `تم إرسال طلب الصداقة إلى @${targetUsername} ✅` });
 });
 
 app.post('/api/friends/respond', (req, res) => {
@@ -1495,8 +1987,21 @@ app.post('/api/friends/respond', (req, res) => {
   const accept = Boolean(req.body?.accept);
   const users = (dataStore.users = dataStore.users || {});
 
-  if (!username || !users[username]) {
+  if (!username) {
     return res.status(400).json({ ok: false, error: 'يجب إنشاء يوزر نيم خاص بك أولاً لقبول طلبات الصداقة!' });
+  }
+  if (!users[username]) {
+    users[username] = {
+      username,
+      playerId: `u_${Date.now().toString(36)}`,
+      displayName: username,
+      avatar: 'char_01',
+      friends: [],
+      incomingRequests: [],
+      outgoingRequests: [],
+      notifications: [],
+      lastSeen: Date.now(),
+    };
   }
   const me = users[username];
   const sender = users[fromUsername];
@@ -1676,6 +2181,7 @@ app.post('/api/admin/games', requireAdmin, (req, res) => {
   };
   dataStore.games.push(game);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ game });
 });
 
@@ -1697,6 +2203,7 @@ app.put('/api/admin/games/:id', requireAdmin, (req, res) => {
   };
   dataStore.games[idx] = updated;
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ game: updated });
 });
 
@@ -1707,6 +2214,7 @@ app.put('/api/admin/games/:id/image', requireAdmin, (req, res) => {
   const imageUrl = typeof req.body?.imageUrl === 'string' ? req.body.imageUrl : '';
   dataStore.games[idx] = { ...dataStore.games[idx], imageUrl: imageUrl || undefined };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ game: dataStore.games[idx] });
 });
 
@@ -1714,12 +2222,14 @@ app.delete('/api/admin/games/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
   dataStore.games = dataStore.games.filter((g) => g.id !== id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
 app.post('/api/admin/games/reset', requireAdmin, (_req, res) => {
   dataStore.games = DEFAULT_GAMES.map((g) => ({ ...g }));
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ games: dataStore.games });
 });
 
@@ -1735,6 +2245,7 @@ app.post('/api/admin/sections', requireAdmin, (req, res) => {
   };
   dataStore.sections.push(section);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ section });
 });
 
@@ -1748,12 +2259,14 @@ app.put('/api/admin/sections/:id', requireAdmin, (req, res) => {
     description: req.body?.description !== undefined ? sanitizeText(String(req.body.description), 200) : dataStore.sections[idx].description,
   };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ section: dataStore.sections[idx] });
 });
 
 app.delete('/api/admin/sections/:id', requireAdmin, (req, res) => {
   dataStore.sections = dataStore.sections.filter((s) => s.id !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -1772,6 +2285,7 @@ app.post('/api/admin/topics', requireAdmin, (req, res) => {
   };
   dataStore.topics.push(topic);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ topic });
 });
 
@@ -1787,6 +2301,7 @@ app.put('/api/admin/topics/:id', requireAdmin, (req, res) => {
     description: req.body?.description !== undefined ? sanitizeText(String(req.body.description), 250) : prev.description,
   };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ topic: dataStore.topics[idx] });
 });
 
@@ -1800,6 +2315,7 @@ app.put('/api/admin/topics/:id/image', requireAdmin, (req, res) => {
     coverImage: imageUrl || undefined,
   };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ topic: dataStore.topics[idx] });
 });
 
@@ -1807,6 +2323,7 @@ app.delete('/api/admin/topics/:id', requireAdmin, (req, res) => {
   dataStore.topics = dataStore.topics.filter((t) => t.id !== req.params.id);
   dataStore.questions = dataStore.questions.filter((q) => q.topicId !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -1831,6 +2348,7 @@ app.post('/api/admin/questions', requireAdmin, (req, res) => {
   };
   dataStore.questions.unshift(q);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ question: q });
 });
 
@@ -1849,12 +2367,14 @@ app.put('/api/admin/questions/:id', requireAdmin, (req, res) => {
     video: req.body?.video !== undefined ? (String(req.body.video).trim() || undefined) : prev.video,
   };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ question: dataStore.questions[idx] });
 });
 
 app.delete('/api/admin/questions/:id', requireAdmin, (req, res) => {
   dataStore.questions = dataStore.questions.filter((q) => q.id !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -1874,6 +2394,7 @@ app.post('/api/admin/barrah/categories', requireAdmin, (req, res) => {
   };
   dataStore.barrahCategories.push(cat);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ category: cat });
 });
 
@@ -1892,12 +2413,14 @@ app.put('/api/admin/barrah/categories/:id', requireAdmin, (req, res) => {
     words,
   };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ category: dataStore.barrahCategories[idx] });
 });
 
 app.delete('/api/admin/barrah/categories/:id', requireAdmin, (req, res) => {
   dataStore.barrahCategories = dataStore.barrahCategories.filter((c) => c.id !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -1919,6 +2442,7 @@ app.post('/api/admin/mimic/sounds', requireAdmin, (req, res) => {
   };
   dataStore.mimicSounds.unshift(sound);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ sound });
 });
 
@@ -1934,12 +2458,14 @@ app.put('/api/admin/mimic/sounds/:id', requireAdmin, (req, res) => {
     audioDataUrl: typeof req.body?.audioDataUrl === 'string' ? req.body.audioDataUrl : prev.audioDataUrl,
   };
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ sound: dataStore.mimicSounds[idx] });
 });
 
 app.delete('/api/admin/mimic/sounds/:id', requireAdmin, (req, res) => {
   dataStore.mimicSounds = dataStore.mimicSounds.filter((s) => s.id !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -1967,6 +2493,7 @@ app.post('/api/admin/cheats', requireAdmin, (req, res) => {
   };
   dataStore.cheatCodes = [cheat, ...(dataStore.cheatCodes || [])];
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ cheat });
 });
 
@@ -1987,12 +2514,14 @@ app.put('/api/admin/cheats/:id', requireAdmin, (req, res) => {
   };
   dataStore.cheatCodes = cheats;
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ cheat: cheats[idx] });
 });
 
 app.delete('/api/admin/cheats/:id', requireAdmin, (req, res) => {
   dataStore.cheatCodes = (dataStore.cheatCodes || []).filter((c) => c.id !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -2039,6 +2568,7 @@ app.post('/api/admin/dub-scenes', requireAdmin, (req, res) => {
   };
   dataStore.dubScenes = [scene, ...(dataStore.dubScenes || [])];
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.status(201).json({ scene });
 });
 
@@ -2063,12 +2593,14 @@ app.put('/api/admin/dub-scenes/:id', requireAdmin, (req, res) => {
   };
   dataStore.dubScenes = scenes;
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ scene: scenes[idx] });
 });
 
 app.delete('/api/admin/dub-scenes/:id', requireAdmin, (req, res) => {
   dataStore.dubScenes = (dataStore.dubScenes || []).filter((s) => s.id !== req.params.id);
   persistStore(dataStore);
+  broadcastCatalogUpdate();
   return res.json({ ok: true });
 });
 
@@ -2101,39 +2633,12 @@ app.get('/api/admin/export', requireAdmin, (_req, res) => {
 
 app.post('/api/admin/import', requireAdmin, (req, res) => {
   const mode = req.body?.mode === 'replace' ? 'replace' : 'merge';
-  const payload = req.body?.data as Partial<DataStoreSnapshot>;
+  const payload = (req.body?.data && typeof req.body.data === 'object' ? req.body.data : req.body) as Partial<DataStoreSnapshot>;
   if (!payload || typeof payload !== 'object') {
     return res.status(400).json({ error: 'ملف النسخة الاحتياطية غير صالح.' });
   }
-  if (mode === 'replace') {
-    dataStore = {
-      sections: Array.isArray(payload.sections) ? payload.sections : dataStore.sections,
-      topics: Array.isArray(payload.topics) ? payload.topics : dataStore.topics,
-      questions: Array.isArray(payload.questions) ? payload.questions : dataStore.questions,
-      games: Array.isArray(payload.games) ? payload.games : dataStore.games,
-      barrahCategories: Array.isArray(payload.barrahCategories) ? payload.barrahCategories : dataStore.barrahCategories,
-      reports: Array.isArray(payload.reports) ? payload.reports : dataStore.reports,
-      mimicSounds: Array.isArray(payload.mimicSounds) ? payload.mimicSounds : dataStore.mimicSounds,
-      cheatCodes: Array.isArray(payload.cheatCodes) ? payload.cheatCodes : dataStore.cheatCodes,
-      dubScenes: Array.isArray(payload.dubScenes) ? payload.dubScenes : dataStore.dubScenes,
-      users: payload.users && typeof payload.users === 'object' ? payload.users : dataStore.users,
-    };
-  } else {
-    dataStore = {
-      sections: reconcileById(dataStore.sections, payload.sections),
-      topics: reconcileById(dataStore.topics, payload.topics),
-      questions: reconcileById(dataStore.questions, payload.questions),
-      games: reconcileById(dataStore.games, payload.games),
-      barrahCategories: reconcileById(dataStore.barrahCategories, payload.barrahCategories),
-      reports: reconcileById(dataStore.reports, payload.reports),
-      mimicSounds: reconcileById(dataStore.mimicSounds, payload.mimicSounds),
-      cheatCodes: reconcileById(dataStore.cheatCodes || [], payload.cheatCodes),
-      dubScenes: reconcileById(dataStore.dubScenes || [], payload.dubScenes),
-      users: { ...(dataStore.users || {}), ...(payload.users || {}) },
-    };
-  }
-  persistStore(dataStore);
-  return res.json({ ok: true, store: dataStore });
+  applySnapshotPayload(mode, payload);
+  return res.json({ ok: true, catalogVersion, store: dataStore });
 });
 
 // AI Game Designer (Server-side @google/genai + Deterministic Fallback)
@@ -2325,6 +2830,15 @@ function sendWs(ws: WebSocket, payload: unknown) {
   }
 }
 
+function broadcastCatalogUpdate() {
+  const payload = JSON.stringify({ type: 'catalog_updated', updatedAt: catalogVersion });
+  clients.forEach((meta) => {
+    if (meta.ws.readyState === WebSocket.OPEN) {
+      meta.ws.send(payload);
+    }
+  });
+}
+
 function sanitizeRoomForClient(room: RoomState): RoomState {
   if (
     room.gameId === 'smart_detective' &&
@@ -2447,6 +2961,7 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
     data.plusGlow && typeof data.plusGlow === 'object' ? (data.plusGlow as PlusGlowConfig) : undefined;
   const plusTitle = data.plusTitle ? sanitizeText(String(data.plusTitle), 40) : undefined;
   const plusFrame = data.plusFrame ? sanitizeText(String(data.plusFrame), 24) : undefined;
+  const plusAnimation = data.plusAnimation ? sanitizeText(String(data.plusAnimation), 48) : undefined;
 
   const hostPlayer: Player = {
     id: pid,
@@ -2463,6 +2978,7 @@ function createRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: str
     plusGlow,
     plusTitle,
     plusFrame,
+    plusAnimation,
   };
 
   const room: RoomState = {
@@ -2507,6 +3023,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
     data.plusGlow && typeof data.plusGlow === 'object' ? (data.plusGlow as PlusGlowConfig) : undefined;
   const incomingPlusTitle = data.plusTitle ? sanitizeText(String(data.plusTitle), 40) : undefined;
   const incomingPlusFrame = data.plusFrame ? sanitizeText(String(data.plusFrame), 24) : undefined;
+  const incomingPlusAnimation = data.plusAnimation ? sanitizeText(String(data.plusAnimation), 48) : undefined;
 
   const existing = room.players.find((p) => p.id === incomingId);
   if (existing) {
@@ -2522,6 +3039,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
             plusGlow: incomingPlusGlow || p.plusGlow,
             plusTitle: incomingPlusTitle || p.plusTitle,
             plusFrame: incomingPlusFrame || p.plusFrame,
+            plusAnimation: incomingPlusAnimation || p.plusAnimation,
           }
         : p
     );
@@ -2545,6 +3063,7 @@ function joinRoomOnServer(data: Record<string, unknown>, fallbackPlayerId: strin
       plusGlow: incomingPlusGlow,
       plusTitle: incomingPlusTitle,
       plusFrame: incomingPlusFrame,
+      plusAnimation: incomingPlusAnimation,
     });
     room.messages = appendSystemChat(room, `انضم ${playerName} إلى الغرفة!`);
   }
@@ -2635,6 +3154,7 @@ function applyRoomActionOnServer(
               senderAvatarBg: sender.avatarBg,
               senderIsPlus: sender.isPlus,
               senderPlusGlow: sender.plusGlow,
+              senderAnimation: sender.plusAnimation,
               text,
               timestamp: Date.now(),
             },

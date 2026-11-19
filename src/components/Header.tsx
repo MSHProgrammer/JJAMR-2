@@ -184,6 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
               isPlus={hasPlus}
               plusGlow={hasPlus ? plusStatus.glow : undefined}
               plusFrame={hasPlus ? plusStatus.avatarFrame : undefined}
+              plusAnimation={hasPlus ? plusStatus.avatarAnimation : undefined}
             />
           </button>
 
